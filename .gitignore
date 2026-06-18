@@ -1,0 +1,25 @@
+# Node
+node_modules
+dist
+dist-ssr
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Rust / Tauri
+src-tauri/target
+src-tauri/gen
+
+# OS
+.DS_Store

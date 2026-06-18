@@ -1,0 +1,42 @@
+[package]
+name = "remoteopsx"
+version = "0.1.0"
+description = "RemoteOpsX - unified Linux remote operations workspace"
+authors = ["RemoteOpsX"]
+edition = "2021"
+rust-version = "1.77"
+
+# The library is what Tauri links against; the binary is a thin launcher.
+[lib]
+name = "remoteopsx_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+# Bundled SQLite so users need no system libsqlite to run the app.
+rusqlite = { version = "0.32", features = ["bundled"] }
+# OS Secret Service (keyring) so secrets never touch SQLite in plaintext.
+keyring = { version = "3", features = ["linux-native"] }
+# System-PTY driver for the interactive SSH terminal (system `ssh` binary).
+portable-pty = "0.8"
+anyhow = "1"
+thiserror = "2"
+once_cell = "1"
+uuid = { version = "1", features = ["v4"] }
+# Wall-clock timestamps for sessions/runs.
+chrono = { version = "0.4", features = ["clock"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
