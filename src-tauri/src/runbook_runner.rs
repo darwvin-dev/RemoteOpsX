@@ -112,6 +112,46 @@ steps:
     command: ss -tulpen | head -50
 "#;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_builtins_parse() {
+        for (name, _desc, yaml) in builtins() {
+            let spec = parse(yaml).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
+            assert!(!spec.steps.is_empty(), "{name} has no steps");
+            for step in &spec.steps {
+                assert!(!step.command.trim().is_empty(), "{name} has an empty command");
+            }
+        }
+    }
+
+    #[test]
+    fn linux_health_check_has_expected_steps() {
+        let spec = parse(LINUX_HEALTH_CHECK).unwrap();
+        assert_eq!(spec.name, "Linux Health Check");
+        assert_eq!(spec.steps.len(), 7);
+        assert_eq!(spec.steps[0].command, "hostnamectl");
+    }
+
+    #[test]
+    fn restart_service_step_requires_confirmation() {
+        let spec = parse(RESTART_SERVICE).unwrap();
+        let restart = spec.steps.iter().find(|s| s.name == "Restart unit").unwrap();
+        assert!(restart.requires_confirmation);
+        // success_pattern is carried through
+        let verify = spec.steps.iter().find(|s| s.name == "Verify active").unwrap();
+        assert_eq!(verify.success_pattern.as_deref(), Some("active"));
+    }
+
+    #[test]
+    fn variables_are_parsed() {
+        let spec = parse(RESTART_SERVICE).unwrap();
+        assert_eq!(spec.variables.get("service").map(String::as_str), Some("nginx"));
+    }
+}
+
 const DIAGNOSE_DISK: &str = r#"name: Diagnose High Disk Usage
 description: Locate what is filling the disk.
 target_os: linux

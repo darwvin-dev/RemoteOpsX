@@ -424,3 +424,103 @@ fn parse_docker(ps: &str, stats: &str) -> (Vec<DockerContainer>, bool) {
     }
     (out, true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpu_idle_and_total() {
+        // user nice system idle iowait irq softirq ...
+        let (idle, total) = parse_cpu("cpu  100 0 50 800 50 0 0 0 0 0");
+        assert_eq!(idle, 850, "idle = idle(800)+iowait(50)");
+        assert_eq!(total, 1000, "sum of all jiffies");
+    }
+
+    #[test]
+    fn cpu_empty_line_is_safe() {
+        assert_eq!(parse_cpu(""), (0, 0));
+    }
+
+    #[test]
+    fn meminfo_used_is_total_minus_available() {
+        let mem = "MemTotal:       16000000 kB\nMemFree:  100000 kB\nMemAvailable:    4000000 kB\nSwapTotal:  2000000 kB\nSwapFree:   500000 kB\n";
+        let (total, used, swap_total, swap_used) = parse_meminfo(mem);
+        assert_eq!(total, 16_000_000);
+        assert_eq!(used, 12_000_000); // total - available
+        assert_eq!(swap_total, 2_000_000);
+        assert_eq!(swap_used, 1_500_000);
+    }
+
+    #[test]
+    fn disks_skip_pseudo_and_parse_percent() {
+        let df = "Filesystem 1024-blocks Used Available Capacity Mounted on\n\
+                  /dev/sda1 100000 80000 20000 80% /\n\
+                  tmpfs 5000 10 4990 1% /run\n\
+                  /dev/sdb1 200000 50000 150000 25% /data mount\n";
+        let disks = parse_disks(df);
+        assert_eq!(disks.len(), 2, "tmpfs is excluded");
+        assert_eq!(disks[0].mount, "/");
+        assert_eq!(disks[0].use_percent, 80.0);
+        // mount paths with spaces are preserved
+        assert_eq!(disks[1].mount, "/data mount");
+    }
+
+    #[test]
+    fn net_sums_all_interfaces() {
+        let (rx, tx) = parse_net("eth0 1000 2000\nwg0 500 250\n");
+        assert_eq!(rx, 1500);
+        assert_eq!(tx, 2250);
+    }
+
+    #[test]
+    fn ps_parses_columns() {
+        let ps = "PID COMMAND %CPU %MEM\n123 nginx 12.5 3.2\n456 postgres 4.0 8.1\n";
+        let procs = parse_ps(ps);
+        assert_eq!(procs.len(), 2);
+        assert_eq!(procs[0].command, "nginx");
+        assert_eq!(procs[0].cpu, 12.5);
+        assert_eq!(procs[1].mem, 8.1);
+    }
+
+    #[test]
+    fn docker_joins_ps_with_stats() {
+        let ps = "web|Up 3 hours|nginx:latest\napi|Exited (1) 2 min ago|api:1.0";
+        let stats = "web|10.50%|2.10%";
+        let (containers, available) = parse_docker(ps, stats);
+        assert!(available);
+        assert_eq!(containers.len(), 2);
+        assert_eq!(containers[0].cpu_percent, Some(10.50));
+        assert_eq!(containers[1].cpu_percent, None); // no stats for exited
+    }
+
+    #[test]
+    fn docker_absent_when_empty() {
+        let (containers, available) = parse_docker("", "");
+        assert!(!available);
+        assert!(containers.is_empty());
+    }
+
+    #[test]
+    fn sections_split_on_markers() {
+        let raw = "@@OS@@\nPRETTY_NAME=\"Arch Linux\"\n@@KERNEL@@\n6.0.0\n@@END@@\nignored";
+        let map = split_sections(raw);
+        assert_eq!(parse_os_name(map.get("OS").unwrap()), "Arch Linux");
+        assert_eq!(map.get("KERNEL").unwrap().trim(), "6.0.0");
+        assert!(!map.contains_key("END"));
+    }
+
+    #[test]
+    fn warnings_fire_on_thresholds() {
+        let mut s = HealthSnapshot::default();
+        s.cpu_percent = 95.0;
+        s.mem_percent = 30.0;
+        s.disks.push(DiskInfo { filesystem: "/dev/sda1".into(), size_kb: 100, used_kb: 90, use_percent: 90.0, mount: "/".into() });
+        s.failed_services.push("foo.service".into());
+        let w = build_warnings(&s);
+        assert!(w.iter().any(|x| x.contains("CPU")));
+        assert!(w.iter().any(|x| x.contains("Disk")));
+        assert!(w.iter().any(|x| x.contains("failed")));
+        assert!(!w.iter().any(|x| x.contains("RAM")), "mem under threshold");
+    }
+}
