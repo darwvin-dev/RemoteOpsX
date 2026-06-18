@@ -4,17 +4,19 @@
 //! command surface consumed by the React frontend. Each command translates
 //! `anyhow` errors into strings so they surface cleanly in the UI.
 
-mod database;
-mod health_collector;
-mod models;
-mod pty_manager;
-mod rdp_adapter;
-mod runbook_runner;
-mod sftp_manager;
-mod ssh_manager;
-mod tunnel_manager;
-mod vault;
-mod vnc_adapter;
+// Modules are `pub` so integration tests (in `tests/`) can drive the remote-ops
+// layer (ssh exec, health collection, runbook execution) against a real host.
+pub mod database;
+pub mod health_collector;
+pub mod models;
+pub mod pty_manager;
+pub mod rdp_adapter;
+pub mod runbook_runner;
+pub mod sftp_manager;
+pub mod ssh_manager;
+pub mod tunnel_manager;
+pub mod vault;
+pub mod vnc_adapter;
 
 use std::sync::Mutex;
 

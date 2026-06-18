@@ -42,6 +42,9 @@ impl TunnelManager {
                 if !key.trim().is_empty() {
                     args.push("-i".into());
                     args.push(key.clone());
+                    // Only use this key (avoid agent-key MaxAuthTries rejection).
+                    args.push("-o".into());
+                    args.push("IdentitiesOnly=yes".into());
                 }
             }
         }

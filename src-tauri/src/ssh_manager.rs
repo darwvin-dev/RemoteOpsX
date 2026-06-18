@@ -39,6 +39,25 @@ fn lookup_secret(server: &Server) -> Option<String> {
     vault::get_secret(&vault::secret_ref(&server.id)).ok().flatten()
 }
 
+/// Append `-i <key>` plus `IdentitiesOnly=yes` for key-based servers.
+///
+/// `IdentitiesOnly=yes` is essential: without it, ssh first offers every key in
+/// the user's agent. On a host with many agent keys the server can hit
+/// `MaxAuthTries` and reject the connection ("Too many authentication
+/// failures") before our configured key is ever tried.
+fn push_key_args(server: &Server, args: &mut Vec<String>) {
+    if server.auth_type == "key" {
+        if let Some(key) = &server.private_key_path {
+            if !key.trim().is_empty() {
+                args.push("-i".into());
+                args.push(key.clone());
+                args.push("-o".into());
+                args.push("IdentitiesOnly=yes".into());
+            }
+        }
+    }
+}
+
 /// Build the full argv for an *interactive* ssh session (terminal tab).
 /// Returns (program, args). When a password is configured and `sshpass`
 /// exists, the program becomes `sshpass` wrapping `ssh`.
@@ -50,14 +69,7 @@ pub fn interactive_argv(server: &Server) -> Result<(String, Vec<String>)> {
     args.push("-p".into());
     args.push(server.port.to_string());
 
-    if server.auth_type == "key" {
-        if let Some(key) = &server.private_key_path {
-            if !key.trim().is_empty() {
-                args.push("-i".into());
-                args.push(key.clone());
-            }
-        }
-    }
+    push_key_args(server, &mut args);
 
     args.push(format!("{}@{}", server.username, server.host));
 
@@ -77,14 +89,7 @@ fn exec_argv(server: &Server, remote_command: &str) -> Result<(String, Vec<Strin
     args.push("-p".into());
     args.push(server.port.to_string());
 
-    if server.auth_type == "key" {
-        if let Some(key) = &server.private_key_path {
-            if !key.trim().is_empty() {
-                args.push("-i".into());
-                args.push(key.clone());
-            }
-        }
-    }
+    push_key_args(server, &mut args);
 
     args.push(format!("{}@{}", server.username, server.host));
     args.push(remote_command.to_string());
