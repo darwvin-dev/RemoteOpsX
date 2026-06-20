@@ -9,41 +9,85 @@ import { RightPanel } from "./components/RightPanel";
 import { BottomPanel } from "./components/BottomPanel";
 import { RunbookLauncher } from "./components/RunbookLauncher";
 import { TunnelManager } from "./components/TunnelManager";
+import { CommandPalette } from "./components/CommandPalette";
+import { ToastStack } from "./components/ToastStack";
 
 export default function App() {
   const loadServers = useStore((s) => s.loadServers);
+  const servers = useStore((s) => s.servers);
+  const tabs = useStore((s) => s.tabs);
+  const alerts = useStore((s) => s.alerts);
+  const setBottomPanel = useStore((s) => s.setBottomPanel);
   const rightCollapsed = useStore((s) => s.tabs.length === 0 && s.focusedServerId === null);
   const [editing, setEditing] = useState<Server | null | undefined>(undefined); // undefined = closed
   const [showRunbooks, setShowRunbooks] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     void loadServers();
   }, [loadServers]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className={`app${rightCollapsed ? " right-collapsed" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <span className="logo" />
-          RemoteOpsX <small>· remote operations workspace</small>
+          <span>
+            RemoteOpsX
+            <small>remote operations cockpit</small>
+          </span>
         </div>
+        <button className="command-trigger" onClick={() => setPaletteOpen(true)}>
+          <span>Search servers, actions, runbooks…</span>
+          <kbd>⌘K</kbd>
+        </button>
         <div className="spacer" />
+        <div className="top-stats" aria-label="Workspace status">
+          <button className="status-chip" onClick={() => setPaletteOpen(true)}>{servers.length} servers</button>
+          <span className="status-chip">{tabs.length} tabs</span>
+          <button className="status-chip alert-chip" onClick={() => setBottomPanel("alerts")}>
+            {alerts.length} alerts
+          </button>
+        </div>
         <button className="tiny" onClick={() => setShowRunbooks(true)}>▶ Runbooks</button>
         <button className="tiny" onClick={() => setShowTunnels(true)}>⇄ Tunnels</button>
-        <div className="meta">Linux remote-ops client</div>
       </header>
 
       <ServerSidebar onNew={() => setEditing(null)} onEdit={(s) => setEditing(s)} />
 
       <main className="main">
         <TabBar />
-        <TabContent />
+        <TabContent
+          onNewServer={() => setEditing(null)}
+          onOpenRunbooks={() => setShowRunbooks(true)}
+          onOpenTunnels={() => setShowTunnels(true)}
+        />
       </main>
 
       {!rightCollapsed && <RightPanel />}
 
       <BottomPanel />
+      <ToastStack />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNewServer={() => setEditing(null)}
+        onOpenRunbooks={() => setShowRunbooks(true)}
+        onOpenTunnels={() => setShowTunnels(true)}
+      />
 
       {editing !== undefined && (
         <ServerForm server={editing} onClose={() => setEditing(undefined)} />

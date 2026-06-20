@@ -30,17 +30,19 @@ export function BottomPanel() {
   const serverName = (id: string) => servers.find((s) => s.id === id)?.name ?? id.slice(0, 8);
 
   return (
-    <div className="bottom" style={{ maxHeight: open ? 240 : 32 }}>
+    <div className={`bottom${open ? "" : " collapsed"}`} style={{ maxHeight: open ? 260 : 36 }}>
       <div className="bottom-tabs">
-        <button className={view === "output" ? "active" : ""} onClick={() => setView("output")}>Output</button>
+        <button className={view === "output" ? "active" : ""} onClick={() => setView("output")}>
+          Output <span>{outputLines.length}</span>
+        </button>
         <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>Runbook history</button>
         <button className={view === "alerts" ? "active" : ""} onClick={() => setView("alerts")}>
-          Alerts {alerts.length > 0 && `(${alerts.length})`}
+          Alerts <span>{alerts.length}</span>
         </button>
         <span style={{ flex: 1 }} />
         {view === "output" && <button className="tiny ghost" onClick={clearOutput}>Clear</button>}
         {view === "alerts" && <button className="tiny ghost" onClick={clearAlerts}>Clear</button>}
-        <button className="tiny ghost" onClick={() => toggle()}>{open ? "▾" : "▸"}</button>
+        <button className="tiny ghost panel-toggle" onClick={() => toggle()}>{open ? "Collapse ▾" : "Expand ▸"}</button>
       </div>
 
       {open && view === "output" && (
@@ -61,6 +63,7 @@ export function BottomPanel() {
                   <span className="at">{new Date(r.started_at).toLocaleString()}</span>
                   <span className={`status-badge ${ok ? "status-ok" : "status-crit"}`}>{r.status}</span>
                   <span>{serverName(r.server_id)} · {r.results.length} steps</span>
+                  {r.ended_at && <span className="muted">{new Date(r.ended_at).toLocaleTimeString()}</span>}
                 </div>
               );
             })

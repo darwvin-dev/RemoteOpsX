@@ -5,11 +5,11 @@ import { DockerPanel } from "./DockerPanel";
 import { NotesSnippetsPanel } from "./NotesSnippetsPanel";
 
 const VIEWS = [
-  { key: "health", label: "Health" },
-  { key: "services", label: "Services" },
-  { key: "docker", label: "Docker" },
-  { key: "notes", label: "Notes" },
-  { key: "snippets", label: "Snippets" },
+  { key: "health", label: "Health", icon: "◆" },
+  { key: "services", label: "Services", icon: "●" },
+  { key: "docker", label: "Docker", icon: "▣" },
+  { key: "notes", label: "Notes", icon: "✦" },
+  { key: "snippets", label: "Snippets", icon: "⌁" },
 ] as const;
 
 /** Right-side operations panel, scoped to the focused server. */
@@ -21,9 +21,28 @@ export function RightPanel() {
 
   return (
     <aside className="right">
+      <div className="right-context">
+        {server && focusedServerId ? (
+          <>
+            <div>
+              <span className="eyebrow">Focused host</span>
+              <strong>{server.name}</strong>
+              <small>{server.username}@{server.host}:{server.port}</small>
+            </div>
+            <span className={`env-badge env-${server.environment}`}>{server.environment}</span>
+          </>
+        ) : (
+          <div>
+            <span className="eyebrow">Operations panel</span>
+            <strong>No host selected</strong>
+            <small>Choose a server to enable live tools</small>
+          </div>
+        )}
+      </div>
       <div className="right-tabs">
         {VIEWS.map((v) => (
           <button key={v.key} className={view === v.key ? "active" : ""} onClick={() => setView(v.key)}>
+            <span>{v.icon}</span>
             {v.label}
           </button>
         ))}

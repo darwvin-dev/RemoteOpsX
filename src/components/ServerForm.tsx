@@ -35,10 +35,21 @@ export function ServerForm({ server, onClose }: Props) {
     setProtocols((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
   }
 
+  function applyDefaults(nextAuthType: AuthType) {
+    setAuthType(nextAuthType);
+    if (nextAuthType === "password" && !protocols.includes("ssh")) {
+      setProtocols((current) => [...current, "ssh"]);
+    }
+  }
+
   async function save() {
     setError(null);
     if (!name.trim() || !host.trim() || !username.trim()) {
       setError("Name, host and username are required.");
+      return;
+    }
+    if (protocols.length === 0) {
+      setError("Pick at least one protocol.");
       return;
     }
     const input: ServerInput = {
@@ -73,10 +84,17 @@ export function ServerForm({ server, onClose }: Props) {
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-head">
-          {server ? `Edit · ${server.name}` : "Add server"}
+          <div>
+            <span className="eyebrow">{server ? "Edit profile" : "New profile"}</span>
+            <strong>{server ? server.name : "Add server"}</strong>
+          </div>
           <button className="ghost tiny" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          <div className="form-section">
+            <span className="section-kicker">Identity</span>
+            <p>Give the host a recognizable name and environment for fast filtering.</p>
+          </div>
           <div className="form-row three">
             <div><label>Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="prod-db-1" /></div>
             <div><label>Group / folder</label><input value={group} onChange={(e) => setGroup(e.target.value)} placeholder="Production" /></div>
@@ -96,13 +114,17 @@ export function ServerForm({ server, onClose }: Props) {
             <div><label>Username</label><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="root" /></div>
           </div>
 
+          <div className="form-section">
+            <span className="section-kicker">Access</span>
+            <p>Choose every workflow this profile should expose in the sidebar.</p>
+          </div>
           <div>
             <label>Protocols</label>
-            <div className="checks">
+            <div className="checks protocol-checks">
               {ALL_PROTOCOLS.map((p) => (
                 <label key={p} className="check">
                   <input type="checkbox" checked={protocols.includes(p)} onChange={() => toggleProtocol(p)} />
-                  {p.toUpperCase()}
+                  <span>{p.toUpperCase()}</span>
                 </label>
               ))}
             </div>
@@ -111,7 +133,7 @@ export function ServerForm({ server, onClose }: Props) {
           <div className="form-row">
             <div>
               <label>Auth type</label>
-              <select value={authType} onChange={(e) => setAuthType(e.target.value as AuthType)}>
+              <select value={authType} onChange={(e) => applyDefaults(e.target.value as AuthType)}>
                 <option value="key">Private key</option>
                 <option value="password">Password</option>
               </select>
@@ -134,6 +156,10 @@ export function ServerForm({ server, onClose }: Props) {
             </div>
           )}
 
+          <div className="form-section">
+            <span className="section-kicker">Context</span>
+            <p>Tags and notes make the cockpit useful during incidents.</p>
+          </div>
           <div>
             <label>Tags (comma separated)</label>
             <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="db, postgres, eu-west" />

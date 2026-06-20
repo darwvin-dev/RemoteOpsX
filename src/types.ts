@@ -1,6 +1,6 @@
 // Shared TypeScript types. These mirror the Rust serde models exactly.
 
-export type Protocol = "ssh" | "sftp" | "rdp" | "vnc";
+export type Protocol = "ssh" | "sftp" | "ftp" | "rdp" | "vnc";
 export type AuthType = "password" | "key";
 export type Environment = "production" | "staging" | "dev";
 
@@ -160,7 +160,7 @@ export interface RemoteFile {
 
 // ---- UI-only types ----
 
-export type TabKind = "ssh" | "rdp" | "vnc" | "logs" | "runbook" | "sftp";
+export type TabKind = "ssh" | "rdp" | "vnc" | "logs" | "runbook" | "sftp" | "ftp";
 
 export interface Tab {
   id: string;

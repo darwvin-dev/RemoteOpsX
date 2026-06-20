@@ -72,6 +72,16 @@ export const sftpDelete = (serverId: string, remotePath: string) => invoke<void>
 export const sftpRename = (serverId: string, from: string, to: string) =>
   invoke<void>("sftp_rename", { serverId, from, to });
 
+// ---- FTP ----
+export const ftpList = (serverId: string, path: string) => invoke<RemoteFile[]>("ftp_list", { serverId, path });
+export const ftpUpload = (serverId: string, localPath: string, remoteDir: string) =>
+  invoke<void>("ftp_upload", { serverId, localPath, remoteDir });
+export const ftpDownload = (serverId: string, remotePath: string, localDir: string) =>
+  invoke<void>("ftp_download", { serverId, remotePath, localDir });
+export const ftpDelete = (serverId: string, remotePath: string) => invoke<void>("ftp_delete", { serverId, remotePath });
+export const ftpRename = (serverId: string, from: string, to: string) =>
+  invoke<void>("ftp_rename", { serverId, from, to });
+
 // ---- Remote desktop ----
 export const rdpLaunch = (serverId: string, options: { fullscreen: boolean; resolution?: string | null }) =>
   invoke<void>("rdp_launch", { serverId, options });

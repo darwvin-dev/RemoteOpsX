@@ -21,6 +21,8 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
   const [running, setRunning] = useState(false);
   const [confirmIdx, setConfirmIdx] = useState<number | null>(null);
   const [done, setDone] = useState(false);
+  const completedSteps = steps.filter((step) => step.state === "success" || step.state === "failure" || step.state === "skipped").length;
+  const progressPct = steps.length ? (completedSteps / steps.length) * 100 : 0;
 
   useEffect(() => {
     void api.runbookSpec(runbookId).then((sp) => {
@@ -121,6 +123,16 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
           <button className="primary" disabled={running} onClick={start}>
             {running ? "Running…" : done ? "Run again" : "Run runbook"}
           </button>
+        </div>
+      </div>
+
+      <div className="run-progress">
+        <div>
+          <strong>{completedSteps}/{steps.length}</strong>
+          <span>{running ? "Running steps" : done ? "Run complete" : "Ready to execute"}</span>
+        </div>
+        <div className="progress-track">
+          <span style={{ width: `${progressPct}%` }} />
         </div>
       </div>
 

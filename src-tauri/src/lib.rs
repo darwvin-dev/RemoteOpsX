@@ -7,6 +7,7 @@
 // Modules are `pub` so integration tests (in `tests/`) can drive the remote-ops
 // layer (ssh exec, health collection, runbook execution) against a real host.
 pub mod database;
+pub mod ftp_manager;
 pub mod health_collector;
 pub mod models;
 pub mod pty_manager;
@@ -289,6 +290,38 @@ fn sftp_rename(state: State<AppState>, server_id: String, from: String, to: Stri
     e(sftp_manager::rename(&server, &from, &to))
 }
 
+// =================== FTP ===================
+
+#[tauri::command]
+fn ftp_list(state: State<AppState>, server_id: String, path: String) -> Result<Vec<RemoteFile>, String> {
+    let server = load_server(&state, &server_id)?;
+    e(ftp_manager::list_dir(&server, &path))
+}
+
+#[tauri::command]
+fn ftp_upload(state: State<AppState>, server_id: String, local_path: String, remote_dir: String) -> Result<(), String> {
+    let server = load_server(&state, &server_id)?;
+    e(ftp_manager::upload(&server, &local_path, &remote_dir))
+}
+
+#[tauri::command]
+fn ftp_download(state: State<AppState>, server_id: String, remote_path: String, local_dir: String) -> Result<(), String> {
+    let server = load_server(&state, &server_id)?;
+    e(ftp_manager::download(&server, &remote_path, &local_dir))
+}
+
+#[tauri::command]
+fn ftp_delete(state: State<AppState>, server_id: String, remote_path: String) -> Result<(), String> {
+    let server = load_server(&state, &server_id)?;
+    e(ftp_manager::delete(&server, &remote_path))
+}
+
+#[tauri::command]
+fn ftp_rename(state: State<AppState>, server_id: String, from: String, to: String) -> Result<(), String> {
+    let server = load_server(&state, &server_id)?;
+    e(ftp_manager::rename(&server, &from, &to))
+}
+
 // =================== Remote desktop ===================
 
 #[tauri::command]
@@ -402,6 +435,11 @@ pub fn run() {
             sftp_download,
             sftp_delete,
             sftp_rename,
+            ftp_list,
+            ftp_upload,
+            ftp_download,
+            ftp_delete,
+            ftp_rename,
             rdp_launch,
             vnc_launch,
             tunnel_start,

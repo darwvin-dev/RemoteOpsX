@@ -4,30 +4,50 @@ import * as api from "../api";
 import { useStore } from "../store";
 import type { RemoteFile, Server } from "../types";
 
-/** Remote file browser over SFTP/scp: list/upload/download/delete/rename. */
-export function SftpPanel({ server, active }: { server: Server; active: boolean }) {
+type FileProtocol = "sftp" | "ftp";
+
+/** Remote file browser over SFTP/scp or plain FTP/curl. */
+export function SftpPanel({ server, active, protocol = "sftp" }: { server: Server; active: boolean; protocol?: FileProtocol }) {
   const pushAlert = useStore((s) => s.pushAlert);
-  const [path, setPath] = useState(`/home/${server.username}`);
+  const [path, setPath] = useState(protocol === "ftp" ? "/" : `/home/${server.username}`);
   const [files, setFiles] = useState<RemoteFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const label = protocol.toUpperCase();
+  const commands = protocol === "ftp"
+    ? {
+        list: api.ftpList,
+        upload: api.ftpUpload,
+        download: api.ftpDownload,
+        delete: api.ftpDelete,
+        rename: api.ftpRename,
+      }
+    : {
+        list: api.sftpList,
+        upload: api.sftpUpload,
+        download: api.sftpDownload,
+        delete: api.sftpDelete,
+        rename: api.sftpRename,
+      };
 
   async function list(p: string) {
     setBusy(true);
     try {
-      const f = await api.sftpList(server.id, p);
+      const f = await commands.list(server.id, p);
       setFiles(f);
       setPath(p);
       setLoaded(true);
     } catch (err) {
-      pushAlert("error", `list ${p}: ${err}`);
+      pushAlert("error", `${label} list ${p}: ${err}`);
     } finally {
       setBusy(false);
     }
   }
 
   // Lazy first load when the tab becomes active.
-  useEffect(() => { if (active && !loaded) void list(path); }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (active && !loaded) void list(path);
+  }, [active, loaded, path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function join(dir: string, name: string) {
     if (name === "..") {
@@ -43,11 +63,11 @@ export function SftpPanel({ server, active }: { server: Server; active: boolean 
     if (!picked || Array.isArray(picked)) return;
     setBusy(true);
     try {
-      await api.sftpUpload(server.id, picked, path);
-      pushAlert("info", `Uploaded to ${path}`);
+      await commands.upload(server.id, picked, path);
+      pushAlert("info", `${label} uploaded to ${path}`);
       await list(path);
     } catch (err) {
-      pushAlert("error", `upload: ${err}`);
+      pushAlert("error", `${label} upload: ${err}`);
     } finally {
       setBusy(false);
     }
@@ -59,10 +79,10 @@ export function SftpPanel({ server, active }: { server: Server; active: boolean 
     const localDir = dest.split("/").slice(0, -1).join("/") || "/";
     setBusy(true);
     try {
-      await api.sftpDownload(server.id, join(path, f.name), localDir);
-      pushAlert("info", `Downloaded ${f.name}`);
+      await commands.download(server.id, join(path, f.name), localDir);
+      pushAlert("info", `${label} downloaded ${f.name}`);
     } catch (err) {
-      pushAlert("error", `download: ${err}`);
+      pushAlert("error", `${label} download: ${err}`);
     } finally {
       setBusy(false);
     }
@@ -71,10 +91,10 @@ export function SftpPanel({ server, active }: { server: Server; active: boolean 
   async function remove(f: RemoteFile) {
     if (!confirm(`Delete ${join(path, f.name)}?`)) return;
     try {
-      await api.sftpDelete(server.id, join(path, f.name));
+      await commands.delete(server.id, join(path, f.name));
       await list(path);
     } catch (err) {
-      pushAlert("error", `delete: ${err}`);
+      pushAlert("error", `${label} delete: ${err}`);
     }
   }
 
@@ -82,16 +102,17 @@ export function SftpPanel({ server, active }: { server: Server; active: boolean 
     const to = prompt("Rename to:", f.name);
     if (!to || to === f.name) return;
     try {
-      await api.sftpRename(server.id, join(path, f.name), join(path, to));
+      await commands.rename(server.id, join(path, f.name), join(path, to));
       await list(path);
     } catch (err) {
-      pushAlert("error", `rename: ${err}`);
+      pushAlert("error", `${label} rename: ${err}`);
     }
   }
 
   return (
     <div className="sftp">
       <div className="sftp-bar">
+        <span className={`pill ${protocol}`}>{label}</span>
         <button className="tiny" onClick={() => void list(join(path, ".."))}>↑ Up</button>
         <input
           className="sftp-path"
