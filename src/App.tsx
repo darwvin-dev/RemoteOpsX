@@ -11,6 +11,8 @@ import { RunbookLauncher } from "./components/RunbookLauncher";
 import { TunnelManager } from "./components/TunnelManager";
 import { CommandPalette } from "./components/CommandPalette";
 import { ToastStack } from "./components/ToastStack";
+import { SettingsModal } from "./components/SettingsModal";
+import { useSettingsStore } from "./settingsStore";
 
 export default function App() {
   const loadServers = useStore((s) => s.loadServers);
@@ -24,6 +26,9 @@ export default function App() {
   const [showRunbooks, setShowRunbooks] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const loadSettings = useSettingsStore((state) => state.load);
+  const theme = useSettingsStore((state) => state.settings.theme);
 
   function openNewServer(folder?: string) {
     setInitialFolder(folder);
@@ -37,7 +42,19 @@ export default function App() {
 
   useEffect(() => {
     void loadServers();
-  }, [loadServers]);
+    void loadSettings().catch(() => undefined);
+  }, [loadServers, loadSettings]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      document.documentElement.dataset.theme = theme === "system" ? (media.matches ? "dark" : "light") : theme;
+    };
+    applyTheme();
+    if (theme !== "system") return;
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [theme]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -74,6 +91,7 @@ export default function App() {
         </div>
         <button className="tiny" onClick={() => setShowRunbooks(true)}>▶ Runbooks</button>
         <button className="tiny" onClick={() => setShowTunnels(true)}>⇄ Tunnels</button>
+        <button className="tiny" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </header>
 
       <ServerSidebar onNew={openNewServer} onEdit={openEditServer} />
@@ -98,6 +116,7 @@ export default function App() {
         onNewServer={() => openNewServer()}
         onOpenRunbooks={() => setShowRunbooks(true)}
         onOpenTunnels={() => setShowTunnels(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {editing !== undefined && (
@@ -112,6 +131,7 @@ export default function App() {
       )}
       {showRunbooks && <RunbookLauncher onClose={() => setShowRunbooks(false)} />}
       {showTunnels && <TunnelManager onClose={() => setShowTunnels(false)} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

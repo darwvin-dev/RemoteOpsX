@@ -34,7 +34,6 @@ interface AppStore {
   bottomPanel: BottomPanelView;
   // the server whose health/services the right panel reflects
   focusedServerId: string | null;
-  healthIntervalMs: number;
   alerts: Alert[];
   outputLines: string[];
 
@@ -44,7 +43,6 @@ interface AppStore {
   setBottomPanel: (v: BottomPanelView) => void;
   toggleBottomPanel: (open?: boolean) => void;
   setFocusedServer: (id: string | null) => void;
-  setHealthInterval: (ms: number) => void;
   openTab: (kind: TabKind, server: Server, opts?: { runbookId?: string; title?: string }) => string;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
@@ -63,7 +61,6 @@ export const useStore = create<AppStore>((set, get) => ({
   bottomPanelOpen: true,
   bottomPanel: "output",
   focusedServerId: null,
-  healthIntervalMs: 3000,
   alerts: [],
   outputLines: [],
 
@@ -82,7 +79,6 @@ export const useStore = create<AppStore>((set, get) => ({
   setBottomPanel: (v) => set({ bottomPanel: v, bottomPanelOpen: true }),
   toggleBottomPanel: (open) => set((s) => ({ bottomPanelOpen: open ?? !s.bottomPanelOpen })),
   setFocusedServer: (id) => set({ focusedServerId: id }),
-  setHealthInterval: (ms) => set({ healthIntervalMs: ms }),
 
   openTab: (kind, server, opts) => {
     const id = nextTabId();

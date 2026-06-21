@@ -8,6 +8,13 @@ import { settingsGet, settingsSave } from "./api";
 import { RemoteOpsError, normalizeRemoteError } from "./errors";
 import { DEFAULT_SETTINGS, patchSettings } from "./settings";
 import type { AppSettings } from "./settings";
+import { createSettingsState } from "./settingsStore";
+
+const darkSettings = (): AppSettings => ({
+  ...DEFAULT_SETTINGS,
+  theme: "dark",
+  default_ports: { ...DEFAULT_SETTINGS.default_ports },
+});
 
 describe("settings contracts", () => {
   beforeEach(() => {
@@ -172,5 +179,66 @@ describe("settings contracts", () => {
 
     expect(error.context).toEqual({ field: "theme" });
     expect(Object.isFrozen(error.context)).toBe(true);
+  });
+});
+
+describe("settings state", () => {
+  it("loads, patches, and saves backend-returned settings", async () => {
+    const loaded = darkSettings();
+    const saved = { ...loaded, theme: "light" as const };
+    const store = createSettingsState({
+      load: async () => loaded,
+      save: async () => saved,
+    });
+
+    await store.getState().load();
+    expect(store.getState()).toMatchObject({ settings: loaded, persisted: loaded, dirty: false });
+
+    store.getState().patch({ theme: "light" });
+    expect(store.getState()).toMatchObject({ settings: saved, persisted: loaded, dirty: true });
+
+    await store.getState().save();
+    expect(store.getState()).toMatchObject({
+      settings: saved,
+      persisted: saved,
+      dirty: false,
+      saving: false,
+      error: null,
+    });
+  });
+
+  it("rolls settings and persisted state back when save fails", async () => {
+    const loaded = darkSettings();
+    const store = createSettingsState({
+      load: async () => loaded,
+      save: async () => { throw new Error("disk full"); },
+    });
+
+    await store.getState().load();
+    store.getState().patch({ theme: "light" });
+
+    await expect(store.getState().save()).rejects.toMatchObject({
+      message: "disk full",
+      code: "client.error",
+    });
+    expect(store.getState()).toMatchObject({
+      settings: loaded,
+      persisted: loaded,
+      dirty: false,
+      saving: false,
+      error: { message: "disk full", code: "client.error" },
+    });
+  });
+
+  it("resets edits without mutating persisted settings", async () => {
+    const loaded = darkSettings();
+    const store = createSettingsState({ load: async () => loaded, save: async (settings) => settings });
+
+    await store.getState().load();
+    store.getState().patch({ default_ports: { ssh: 2222 } });
+    store.getState().reset();
+
+    expect(store.getState()).toMatchObject({ settings: loaded, persisted: loaded, dirty: false, error: null });
+    expect(store.getState().settings).not.toBe(store.getState().persisted);
   });
 });

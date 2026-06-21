@@ -8,6 +8,7 @@ interface Props {
   onNewServer: () => void;
   onOpenRunbooks: () => void;
   onOpenTunnels: () => void;
+  onOpenSettings: () => void;
 }
 
 interface PaletteAction {
@@ -29,7 +30,7 @@ const SERVER_ACTIONS: { kind: TabKind; label: string; requiresProtocol?: "ssh" |
 ];
 
 /** Keyboard-first command palette for jumping across servers and common actions. */
-export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onOpenTunnels }: Props) {
+export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onOpenTunnels, onOpenSettings }: Props) {
   const servers = useStore((s) => s.servers);
   const tabs = useStore((s) => s.tabs);
   const activeTabId = useStore((s) => s.activeTabId);
@@ -50,6 +51,14 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
     };
 
     const globalActions: PaletteAction[] = [
+      {
+        id: "settings",
+        title: "Open application settings",
+        eyebrow: "Application",
+        detail: "Configure appearance, connections, retention and desktop integration",
+        keywords: "settings preferences configuration theme ports",
+        run: closeThen(onOpenSettings),
+      },
       {
         id: "new-server",
         title: "Add server profile",
@@ -144,6 +153,7 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
     onNewServer,
     onOpenRunbooks,
     onOpenTunnels,
+    onOpenSettings,
     openTab,
     servers,
     setActiveTab,

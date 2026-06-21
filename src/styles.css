@@ -1,7 +1,8 @@
 /* RemoteOpsX — polished ops cockpit.
    Dark, dense and keyboard-friendly, with calm hierarchy for incident work. */
 
-:root {
+:root,
+:root[data-theme="dark"] {
   --bg-0: #070b12;
   --bg-1: #0d1320;
   --bg-2: #121a29;
@@ -28,6 +29,29 @@
   --glow: 0 0 0 1px rgba(45, 212, 191, 0.26), 0 16px 50px rgba(45, 212, 191, 0.08);
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #eef3f8;
+  --bg-1: #f8fafc;
+  --bg-2: #ffffff;
+  --bg-3: #e4ebf3;
+  --bg-4: #d5e0ec;
+  --border: rgba(45, 61, 80, 0.13);
+  --border-strong: rgba(45, 61, 80, 0.25);
+  --text-0: #152235;
+  --text-1: #4b5f76;
+  --text-2: #718197;
+  --accent: #087f75;
+  --accent-2: #176fba;
+  --accent-dim: #c7ece8;
+  --ok: #18823b;
+  --warn: #9a6500;
+  --crit: #c52f2a;
+  --purple: #7048bd;
+  --shadow: 0 24px 70px rgba(32, 47, 65, 0.2);
+  --glow: 0 0 0 1px rgba(8, 127, 117, 0.22), 0 14px 35px rgba(8, 127, 117, 0.1);
+}
+
 * { box-sizing: border-box; }
 
 html,
@@ -48,6 +72,50 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at top left, rgba(8, 127, 117, 0.09), transparent 30%),
+    radial-gradient(circle at 70% -10%, rgba(23, 111, 186, 0.08), transparent 28%),
+    var(--bg-0);
+}
+
+:root[data-theme="light"] button {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(224, 232, 241, 0.72));
+}
+:root[data-theme="light"] button:hover { background: var(--bg-3); }
+:root[data-theme="light"] button.primary { background: linear-gradient(135deg, #087f75, #176fba); color: #fff; }
+:root[data-theme="light"] button.primary:hover { background: linear-gradient(135deg, #076c64, #125f9f); }
+:root[data-theme="light"] button.ghost { background: transparent; }
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea { background: rgba(255, 255, 255, 0.92); }
+:root[data-theme="light"] input:focus,
+:root[data-theme="light"] select:focus,
+:root[data-theme="light"] textarea:focus { background: #fff; }
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder { color: #7a899a; }
+:root[data-theme="light"] kbd { background: rgba(21, 34, 53, 0.06); border-bottom-color: rgba(21, 34, 53, 0.35); }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: #aebdcd; border: 2px solid transparent; background-clip: padding-box; }
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .sidebar,
+:root[data-theme="light"] .right,
+:root[data-theme="light"] .bottom,
+:root[data-theme="light"] .bottom-tabs,
+:root[data-theme="light"] .term-toolbar,
+:root[data-theme="light"] .sftp-bar,
+:root[data-theme="light"] .toolbar { background: rgba(248, 250, 252, 0.9); }
+:root[data-theme="light"] .palette { background: linear-gradient(180deg, #ffffff, #f3f7fb); }
+:root[data-theme="light"] .toast { background: rgba(255, 255, 255, 0.96); }
+:root[data-theme="light"] .ops-node { background: rgba(255, 255, 255, 0.9); }
+:root[data-theme="light"] .alert-chip:not(:disabled),
+:root[data-theme="light"] .env-badge.env-production,
+:root[data-theme="light"] .status-crit { color: var(--crit); }
+:root[data-theme="light"] .env-badge.env-staging,
+:root[data-theme="light"] .status-warn { color: var(--warn); }
+:root[data-theme="light"] .env-badge.env-dev,
+:root[data-theme="light"] .status-ok,
+:root[data-theme="light"] .warn-banner.ok { color: var(--ok); }
 
 button,
 input,
@@ -779,8 +847,10 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
   max-height: 92vh;
   overflow-y: auto;
 }
+:root[data-theme="light"] .modal { background: linear-gradient(180deg, #ffffff, #f5f8fb); }
 .modal.wide { width: 820px; }
 .modal.server-modal { width: min(920px, 96vw); }
+.modal.settings-modal { width: min(760px, 96vw); }
 .modal-head {
   padding: 16px 18px;
   border-bottom: 1px solid var(--border);
@@ -790,6 +860,7 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
   gap: 12px;
 }
 .modal-head strong { display: block; margin-top: 3px; font-size: 16px; }
+.modal-head h2 { margin: 3px 0 0; font-size: 16px; }
 .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 13px; }
 .modal-foot { padding: 13px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -801,6 +872,31 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
 }
 .modal-body .form-section:first-child { border-top: 0; padding-top: 0; }
 .form-section p { margin: 4px 0 0; color: var(--text-2); font-size: 11px; }
+
+.settings-body { gap: 18px; }
+.settings-section { border: 0; margin: 0; padding: 0; }
+.settings-section + .settings-section { border-top: 1px solid var(--border); padding-top: 16px; }
+.settings-section h3 { margin: 0 0 11px; color: var(--text-0); font-size: 12px; letter-spacing: 0.02em; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ports-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.settings-toggles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-0);
+}
+.settings-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); }
+.settings-error { display: grid; gap: 4px; padding: 10px 12px; color: var(--crit); border: 1px solid color-mix(in srgb, var(--crit) 35%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--crit) 8%, transparent); }
+.settings-error span { color: var(--text-1); font-size: 11px; }
+.settings-foot { flex-wrap: wrap; }
+:root[data-theme="light"] .settings-toggle { background: rgba(255, 255, 255, 0.72); }
 .required { color: var(--accent); }
 .field-help { display: block; margin-top: 5px; color: var(--text-2); font-size: 10px; line-height: 1.4; }
 .folder-picker { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: 8px; }
@@ -1103,6 +1199,9 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
   .folder-picker,
   .form-row,
   .form-row.three { grid-template-columns: 1fr; }
+  .settings-grid,
+  .ports-grid,
+  .settings-toggles { grid-template-columns: 1fr; }
   .start-dashboard { padding: 14px; }
   .hero-card { padding: 20px; }
   .step-head { grid-template-columns: auto minmax(0, 1fr); }
