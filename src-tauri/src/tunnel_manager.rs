@@ -14,12 +14,37 @@ use anyhow::{anyhow, Result};
 use crate::models::{Server, Tunnel};
 use crate::ssh_manager;
 
-fn validate_tunnel(tunnel: &Tunnel) -> Result<()> {
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub(crate) struct TunnelValidationError {
+    pub field: &'static str,
+    message: String,
+}
+
+impl TunnelValidationError {
+    fn new(field: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            field,
+            message: message.into(),
+        }
+    }
+}
+
+pub(crate) fn validate_tunnel(tunnel: &Tunnel) -> Result<(), TunnelValidationError> {
     if tunnel.id.trim().is_empty() {
-        return Err(anyhow!("tunnel id is required"));
+        return Err(TunnelValidationError::new("id", "tunnel id is required"));
+    }
+    if tunnel.server_id.trim().is_empty() {
+        return Err(TunnelValidationError::new(
+            "server_id",
+            "server id is required",
+        ));
     }
     if tunnel.local_port == 0 {
-        return Err(anyhow!("local port must be between 1 and 65535"));
+        return Err(TunnelValidationError::new(
+            "local_port",
+            "local port must be between 1 and 65535",
+        ));
     }
     match tunnel.r#type.as_str() {
         "dynamic" => Ok(()),
@@ -29,14 +54,23 @@ fn validate_tunnel(tunnel: &Tunnel) -> Result<()> {
                 .as_deref()
                 .map_or(true, |host| host.trim().is_empty())
             {
-                return Err(anyhow!("remote host is required"));
+                return Err(TunnelValidationError::new(
+                    "remote_host",
+                    "remote host is required",
+                ));
             }
             if tunnel.remote_port.map_or(true, |port| port == 0) {
-                return Err(anyhow!("remote port must be between 1 and 65535"));
+                return Err(TunnelValidationError::new(
+                    "remote_port",
+                    "remote port must be between 1 and 65535",
+                ));
             }
             Ok(())
         }
-        other => Err(anyhow!("unknown tunnel type: {other}")),
+        other => Err(TunnelValidationError::new(
+            "type",
+            format!("unknown tunnel type: {other}"),
+        )),
     }
 }
 

@@ -63,8 +63,13 @@ mod tests {
 
     #[test]
     fn internal_error_serialization_never_exposes_diagnostics() {
-        let serialized = serde_json::to_string(&DomainError::internal("secret-canary-value"))
-            .expect("internal error should serialize");
+        let error = DomainError::internal("secret-canary-value");
+        assert_eq!(error.message, "An unexpected internal error occurred.");
+        assert!(!error.retryable);
+        assert!(error.context.is_empty());
+        assert!(uuid::Uuid::parse_str(&error.correlation_id).is_ok());
+
+        let serialized = serde_json::to_string(&error).expect("internal error should serialize");
 
         assert!(!serialized.contains("secret-canary-value"));
         assert!(serialized.contains("internal.unexpected"));
