@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection};
 
 use crate::models::*;
-use crate::settings::AppSettings;
+use crate::settings::{AppSettings, CURRENT_SETTINGS_SCHEMA_VERSION};
 
 /// Open (creating if needed) the SQLite database and run migrations.
 pub fn open(path: &std::path::Path) -> Result<Connection> {
@@ -136,17 +136,29 @@ fn now() -> String {
 
 pub fn load_settings(conn: &Connection) -> Result<AppSettings> {
     let result = conn.query_row(
-        "SELECT value_json FROM app_settings WHERE singleton_id = 1",
+        "SELECT schema_version, value_json FROM app_settings WHERE singleton_id = 1",
         [],
-        |row| row.get::<_, String>(0),
+        |row| Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?)),
     );
-    let value_json = match result {
+    let (stored_schema_version, value_json) = match result {
         Ok(value) => value,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(AppSettings::default()),
         Err(error) => return Err(error.into()),
     };
     let settings: AppSettings =
         serde_json::from_str(&value_json).context("failed to deserialize application settings")?;
+    if stored_schema_version != settings.schema_version {
+        return Err(anyhow!(
+            "settings schema version mismatch between database marker and JSON payload"
+        ));
+    }
+    if stored_schema_version != CURRENT_SETTINGS_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "unsupported settings schema version {}; supported version is {}",
+            stored_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        ));
+    }
     settings
         .validate()
         .map_err(|error| anyhow!("invalid persisted setting: {}", error.message))?;
@@ -690,14 +702,14 @@ mod tests {
 
     #[test]
     fn settings_save_reload_and_replace_singleton_atomically() {
-        let mut conn = Connection::open_in_memory().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         let first = AppSettings {
             theme: Theme::Light,
             health_refresh_interval_ms: 5000,
             ..AppSettings::default()
         };
-        save_settings(&mut conn, &first).unwrap();
+        save_settings(&conn, &first).unwrap();
         assert_eq!(load_settings(&conn).unwrap(), first);
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
@@ -708,11 +720,78 @@ mod tests {
             theme: Theme::Dark,
             ..AppSettings::default()
         };
-        save_settings(&mut conn, &second).unwrap();
+        save_settings(&conn, &second).unwrap();
         assert_eq!(load_settings(&conn).unwrap(), second);
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn load_settings_rejects_database_and_json_schema_version_mismatch() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let value_json = serde_json::to_string(&AppSettings::default()).unwrap();
+        conn.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, 2, ?1, ?2)",
+            params![value_json, now()],
+        )
+        .unwrap();
+
+        let error = load_settings(&conn).unwrap_err().to_string();
+        assert!(error.contains("schema version mismatch"));
+    }
+
+    #[test]
+    fn load_settings_rejects_unsupported_schema_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let settings = AppSettings {
+            schema_version: 2,
+            ..AppSettings::default()
+        };
+        conn.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, 2, ?1, ?2)",
+            params![serde_json::to_string(&settings).unwrap(), now()],
+        )
+        .unwrap();
+
+        let error = load_settings(&conn).unwrap_err().to_string();
+        assert!(error.contains("unsupported settings schema version"));
+    }
+
+    #[test]
+    fn invalid_save_preserves_previously_persisted_settings() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let original = AppSettings {
+            theme: Theme::Light,
+            ..AppSettings::default()
+        };
+        save_settings(&conn, &original).unwrap();
+        let invalid = AppSettings {
+            health_refresh_interval_ms: 999,
+            ..AppSettings::default()
+        };
+
+        assert!(save_settings(&conn, &invalid).is_err());
+        assert_eq!(load_settings(&conn).unwrap(), original);
+    }
+
+    #[test]
+    fn load_settings_rejects_corrupt_json() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, 1, 'not-json', ?1)",
+            params![now()],
+        )
+        .unwrap();
+
+        assert!(load_settings(&conn).is_err());
     }
 }

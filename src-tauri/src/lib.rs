@@ -500,65 +500,6 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-#[cfg(test)]
-mod tunnel_error_tests {
-    use super::*;
-
-    fn tunnel() -> Tunnel {
-        Tunnel {
-            id: "tunnel-1".into(),
-            server_id: "server-1".into(),
-            r#type: "local".into(),
-            local_host: Some("127.0.0.1".into()),
-            local_port: 8080,
-            remote_host: Some("example.com".into()),
-            remote_port: Some(80),
-            status: "pending".into(),
-            created_at: String::new(),
-        }
-    }
-
-    #[test]
-    fn invalid_tunnel_shapes_are_validation_errors_with_precise_fields() {
-        let mut cases = Vec::new();
-
-        let mut missing_server = tunnel();
-        missing_server.server_id.clear();
-        cases.push((missing_server, "server_id"));
-
-        let mut zero_local_port = tunnel();
-        zero_local_port.local_port = 0;
-        cases.push((zero_local_port, "local_port"));
-
-        let mut missing_remote_host = tunnel();
-        missing_remote_host.remote_host = None;
-        cases.push((missing_remote_host, "remote_host"));
-
-        let mut missing_remote_port = tunnel();
-        missing_remote_port.remote_port = None;
-        cases.push((missing_remote_port, "remote_port"));
-
-        let mut unknown_type = tunnel();
-        unknown_type.r#type = "unknown".into();
-        cases.push((unknown_type, "type"));
-
-        for (value, field) in cases {
-            let error = validate_tunnel_start_input(&value).expect_err("shape should be invalid");
-            assert_eq!(error.code, "validation.invalid_value");
-            assert_eq!(error.context.get("field").map(String::as_str), Some(field));
-        }
-    }
-
-    #[test]
-    fn operational_tunnel_start_failures_are_internal_errors() {
-        let error = map_tunnel_start_result(Err(anyhow::anyhow!("ssh executable unavailable")))
-            .expect_err("spawn failure should be returned");
-
-        assert_eq!(error.code, "internal.unexpected");
-        assert!(error.context.is_empty());
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -619,4 +560,63 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running RemoteOpsX");
+}
+
+#[cfg(test)]
+mod tunnel_error_tests {
+    use super::*;
+
+    fn tunnel() -> Tunnel {
+        Tunnel {
+            id: "tunnel-1".into(),
+            server_id: "server-1".into(),
+            r#type: "local".into(),
+            local_host: Some("127.0.0.1".into()),
+            local_port: 8080,
+            remote_host: Some("example.com".into()),
+            remote_port: Some(80),
+            status: "pending".into(),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn invalid_tunnel_shapes_are_validation_errors_with_precise_fields() {
+        let mut cases = Vec::new();
+
+        let mut missing_server = tunnel();
+        missing_server.server_id.clear();
+        cases.push((missing_server, "server_id"));
+
+        let mut zero_local_port = tunnel();
+        zero_local_port.local_port = 0;
+        cases.push((zero_local_port, "local_port"));
+
+        let mut missing_remote_host = tunnel();
+        missing_remote_host.remote_host = None;
+        cases.push((missing_remote_host, "remote_host"));
+
+        let mut missing_remote_port = tunnel();
+        missing_remote_port.remote_port = None;
+        cases.push((missing_remote_port, "remote_port"));
+
+        let mut unknown_type = tunnel();
+        unknown_type.r#type = "unknown".into();
+        cases.push((unknown_type, "type"));
+
+        for (value, field) in cases {
+            let error = validate_tunnel_start_input(&value).expect_err("shape should be invalid");
+            assert_eq!(error.code, "validation.invalid_value");
+            assert_eq!(error.context.get("field").map(String::as_str), Some(field));
+        }
+    }
+
+    #[test]
+    fn operational_tunnel_start_failures_are_internal_errors() {
+        let error = map_tunnel_start_result(Err(anyhow::anyhow!("ssh executable unavailable")))
+            .expect_err("spawn failure should be returned");
+
+        assert_eq!(error.code, "internal.unexpected");
+        assert!(error.context.is_empty());
+    }
 }

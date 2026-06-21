@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 
+pub const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
@@ -55,7 +57,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: CURRENT_SETTINGS_SCHEMA_VERSION,
             theme: Theme::System,
             default_ports: DefaultPorts::default(),
             health_refresh_interval_ms: 3000,
@@ -71,6 +73,15 @@ impl Default for AppSettings {
 
 impl AppSettings {
     pub fn validate(&self) -> Result<(), DomainError> {
+        if self.schema_version != CURRENT_SETTINGS_SCHEMA_VERSION {
+            return Err(DomainError::validation(
+                "schema_version",
+                format!(
+                    "unsupported settings schema version; supported schema version is {}",
+                    CURRENT_SETTINGS_SCHEMA_VERSION
+                ),
+            ));
+        }
         if !(1000..=60_000).contains(&self.health_refresh_interval_ms) {
             return Err(DomainError::validation(
                 "health_refresh_interval_ms",
@@ -222,5 +233,16 @@ mod tests {
         settings.default_ports.rdp = 1;
         settings.default_ports.vnc = 1;
         assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn validation_rejects_unsupported_schema_version() {
+        let settings = AppSettings {
+            schema_version: 2,
+            ..AppSettings::default()
+        };
+        let error = settings.validate().unwrap_err();
+        assert_eq!(field(&error), Some("schema_version"));
+        assert!(error.message.contains("supported schema version is 1"));
     }
 }
