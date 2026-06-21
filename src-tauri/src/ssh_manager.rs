@@ -7,7 +7,7 @@
 //!
 //! Two execution modes share the same argument builder:
 //!   * interactive PTY (see `pty_manager`) — the terminal tab
-//!   * one-shot exec (`run_remote`) — health, runbooks, services, docker, sftp
+//!   * one-shot exec (`run_remote`) — health, runbooks, services, sftp
 
 use std::process::Command;
 
@@ -36,7 +36,9 @@ fn wants_password(server: &Server) -> bool {
 
 /// Resolve the secret for a server from the keyring (if any).
 fn lookup_secret(server: &Server) -> Option<String> {
-    vault::get_secret(&vault::secret_ref(&server.id)).ok().flatten()
+    vault::get_secret(&vault::secret_ref(&server.id))
+        .ok()
+        .flatten()
 }
 
 /// Append `-i <key>` plus `IdentitiesOnly=yes` for key-based servers.
@@ -100,7 +102,11 @@ fn exec_argv(server: &Server, remote_command: &str) -> Result<(String, Vec<Strin
 /// If the server uses password auth and `sshpass` is installed, wrap the call
 /// so the password is fed on stdin (never the process table / logs). Otherwise
 /// return ssh directly (key / agent auth).
-fn wrap_with_password(server: &Server, program: &str, args: Vec<String>) -> Result<(String, Vec<String>)> {
+fn wrap_with_password(
+    server: &Server,
+    program: &str,
+    args: Vec<String>,
+) -> Result<(String, Vec<String>)> {
     if wants_password(server) {
         match lookup_secret(server) {
             Some(_) if sshpass_available() => {
@@ -142,14 +148,16 @@ pub fn apply_password_env(cmd: &mut Command, server: &Server) {
 }
 
 /// Execute a remote command and capture stdout/stderr/exit code.
-/// This is the workhorse for health, runbooks, services and docker.
+/// This is the workhorse for health, runbooks and services.
 pub fn run_remote(server: &Server, remote_command: &str) -> Result<CommandOutput> {
     let (program, args) = exec_argv(server, remote_command)?;
     let mut cmd = Command::new(&program);
     cmd.args(&args);
     apply_password_env(&mut cmd, server);
 
-    let output = cmd.output().map_err(|e| anyhow!("failed to spawn ssh: {e}"))?;
+    let output = cmd
+        .output()
+        .map_err(|e| anyhow!("failed to spawn ssh: {e}"))?;
     let exit_code = output.status.code().unwrap_or(-1);
     Ok(CommandOutput {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),

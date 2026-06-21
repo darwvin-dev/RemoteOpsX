@@ -266,7 +266,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 git diff --check
 ```
 
-Expected: all commands exit 0. The ignored Docker SSH integration test remains explicitly reported unless Docker is available and it is run.
+Expected: all commands exit 0. Live SSH integration testing should target a reachable Linux test host when one is available.
 
 - [ ] **Step 4: Rendered smoke test**
 

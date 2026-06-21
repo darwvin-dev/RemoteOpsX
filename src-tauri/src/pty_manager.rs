@@ -37,7 +37,14 @@ impl PtyManager {
 
     /// Spawn an interactive ssh session inside a PTY. `id` is chosen by the
     /// frontend (one per terminal tab). Output is streamed via events.
-    pub fn spawn(&self, app: AppHandle, id: String, server: &Server, cols: u16, rows: u16) -> Result<()> {
+    pub fn spawn(
+        &self,
+        app: AppHandle,
+        id: String,
+        server: &Server,
+        cols: u16,
+        rows: u16,
+    ) -> Result<()> {
         let (program, args) = ssh_manager::interactive_argv(server)?;
 
         let pty_system = native_pty_system();
@@ -56,7 +63,10 @@ impl PtyManager {
         cmd.env("TERM", "xterm-256color");
         // Feed the password to sshpass -e via the environment, never argv.
         if program == "sshpass" {
-            if let Some(pw) = crate::vault::get_secret(&crate::vault::secret_ref(&server.id)).ok().flatten() {
+            if let Some(pw) = crate::vault::get_secret(&crate::vault::secret_ref(&server.id))
+                .ok()
+                .flatten()
+            {
                 cmd.env("SSHPASS", pw);
             }
         }
@@ -102,7 +112,9 @@ impl PtyManager {
     /// Write user keystrokes to the PTY.
     pub fn write(&self, id: &str, data: &[u8]) -> Result<()> {
         let mut guard = self.sessions.lock().unwrap();
-        let session = guard.get_mut(id).ok_or_else(|| anyhow!("no such pty session"))?;
+        let session = guard
+            .get_mut(id)
+            .ok_or_else(|| anyhow!("no such pty session"))?;
         session.writer.write_all(data)?;
         session.writer.flush()?;
         Ok(())
@@ -111,7 +123,9 @@ impl PtyManager {
     /// Resize the PTY to match the xterm viewport.
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<()> {
         let guard = self.sessions.lock().unwrap();
-        let session = guard.get(id).ok_or_else(|| anyhow!("no such pty session"))?;
+        let session = guard
+            .get(id)
+            .ok_or_else(|| anyhow!("no such pty session"))?;
         session.master.resize(PtySize {
             rows: rows.max(1),
             cols: cols.max(1),

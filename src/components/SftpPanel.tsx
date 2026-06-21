@@ -76,11 +76,10 @@ export function SftpPanel({ server, active, protocol = "sftp" }: { server: Serve
   async function download(f: RemoteFile) {
     const dest = await saveDialog({ defaultPath: f.name });
     if (!dest) return;
-    const localDir = dest.split("/").slice(0, -1).join("/") || "/";
     setBusy(true);
     try {
-      await commands.download(server.id, join(path, f.name), localDir);
-      pushAlert("info", `${label} downloaded ${f.name}`);
+      await commands.download(server.id, join(path, f.name), dest);
+      pushAlert("info", `${label} downloaded ${f.name} to ${dest}`);
     } catch (err) {
       pushAlert("error", `${label} download: ${err}`);
     } finally {
@@ -113,6 +112,7 @@ export function SftpPanel({ server, active, protocol = "sftp" }: { server: Serve
     <div className="sftp">
       <div className="sftp-bar">
         <span className={`pill ${protocol}`}>{label}</span>
+        {protocol === "ftp" && <span className="status-badge status-warn" title="FTP traffic is not encrypted">plaintext</span>}
         <button className="tiny" onClick={() => void list(join(path, ".."))}>↑ Up</button>
         <input
           className="sftp-path"

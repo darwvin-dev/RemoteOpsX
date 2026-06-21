@@ -4,7 +4,7 @@ import * as api from "../api";
 import type { Environment, Server } from "../types";
 
 interface Props {
-  onNew: () => void;
+  onNew: (folder?: string) => void;
   onEdit: (s: Server) => void;
 }
 
@@ -62,13 +62,14 @@ export function ServerSidebar({ onNew, onEdit }: Props) {
     }
   }
 
-  function connect(s: Server, kind: "ssh" | "rdp" | "vnc" | "sftp" | "logs") {
+  function connect(s: Server, kind: "ssh" | "rdp" | "vnc" | "sftp" | "ftp" | "logs") {
     openTab(kind, s);
   }
 
   function defaultConnect(server: Server) {
     if (server.protocols.includes("ssh")) connect(server, "ssh");
     else if (server.protocols.includes("sftp")) connect(server, "sftp");
+    else if (server.protocols.includes("ftp")) connect(server, "ftp");
     else if (server.protocols.includes("rdp")) connect(server, "rdp");
     else if (server.protocols.includes("vnc")) connect(server, "vnc");
     else connect(server, "logs");
@@ -82,7 +83,7 @@ export function ServerSidebar({ onNew, onEdit }: Props) {
             <strong>Servers</strong>
             <small>{filteredCount} shown · {servers.length} total</small>
           </div>
-          <button className="primary tiny" onClick={onNew}>+ Add</button>
+          <button className="primary tiny" onClick={() => onNew()}>+ Add</button>
         </div>
         <div className="sidebar-search">
           <input
@@ -120,7 +121,19 @@ export function ServerSidebar({ onNew, onEdit }: Props) {
           <div key={group}>
             <div className="group-label">
               <span>{group}</span>
-              <span>{items.length}</span>
+              <span className="group-actions">
+                <button
+                  className="tiny ghost"
+                  title={`Add server to ${group}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onNew(group === "Ungrouped" ? undefined : group);
+                  }}
+                >
+                  + Add
+                </button>
+                <span>{items.length}</span>
+              </span>
             </div>
             {items.map((s) => (
               <div
@@ -151,6 +164,9 @@ export function ServerSidebar({ onNew, onEdit }: Props) {
                   )}
                   {s.protocols.includes("sftp") && (
                     <button className="tiny" title="Open file browser" onClick={(e) => { e.stopPropagation(); connect(s, "sftp"); }}>SFTP</button>
+                  )}
+                  {s.protocols.includes("ftp") && (
+                    <button className="tiny" title="Open plaintext FTP browser" onClick={(e) => { e.stopPropagation(); connect(s, "ftp"); }}>FTP</button>
                   )}
                   {s.protocols.includes("rdp") && (
                     <button className="tiny" title="Launch RDP" onClick={(e) => { e.stopPropagation(); connect(s, "rdp"); }}>RDP</button>

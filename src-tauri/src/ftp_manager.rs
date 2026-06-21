@@ -6,7 +6,6 @@
 //! argv, keeping passwords out of the process list.
 
 use std::io::Write;
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, Result};
@@ -16,7 +15,7 @@ use crate::vault;
 
 pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
     let url = ftp_url(server, path, true);
-    let out = run_curl(server, &["--fail", "--silent", "--show-error", "--path-as-is", &url])?;
+    let out = run_curl(server, &base_args_with_url(url))?;
     if !out.status.success() {
         return Err(anyhow!(String::from_utf8_lossy(&out.stderr).to_string()));
     }
@@ -28,22 +27,32 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
         }
         files.push(parse_list_line(line));
     }
-    files.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    files.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     Ok(files)
 }
 
 pub fn upload(server: &Server, local_path: &str, remote_dir: &str) -> Result<()> {
     let url = ftp_url(server, remote_dir, true);
-    let out = run_curl(server, &["--fail", "--silent", "--show-error", "--path-as-is", "--ftp-create-dirs", "--upload-file", local_path, &url])?;
+    let mut args = base_args();
+    args.extend([
+        "--ftp-create-dirs".into(),
+        "--upload-file".into(),
+        local_path.into(),
+        url,
+    ]);
+    let out = run_curl(server, &args)?;
     status_result(out, "upload")
 }
 
-pub fn download(server: &Server, remote_path: &str, local_dir: &str) -> Result<()> {
+pub fn download(server: &Server, remote_path: &str, local_path: &str) -> Result<()> {
     let url = ftp_url(server, remote_path, false);
-    let name = remote_basename(remote_path);
-    let local_path = Path::new(local_dir).join(name);
-    let local_path = local_path.to_string_lossy().to_string();
-    let out = run_curl(server, &["--fail", "--silent", "--show-error", "--path-as-is", "--output", &local_path, &url])?;
+    let mut args = base_args();
+    args.extend(["--output".into(), local_path.into(), url]);
+    let out = run_curl(server, &args)?;
     status_result(out, "download")
 }
 
@@ -56,27 +65,46 @@ pub fn delete(server: &Server, remote_path: &str) -> Result<()> {
 }
 
 pub fn rename(server: &Server, from: &str, to: &str) -> Result<()> {
-    run_quote(server, &[
-        format!("RNFR {}", ftp_command_path(from)),
-        format!("RNTO {}", ftp_command_path(to)),
-    ])
+    run_quote(
+        server,
+        &[
+            format!("RNFR {}", ftp_command_path(from)),
+            format!("RNTO {}", ftp_command_path(to)),
+        ],
+    )
 }
 
 fn run_quote(server: &Server, quotes: &[String]) -> Result<()> {
-    let mut args = vec!["--fail", "--silent", "--show-error", "--path-as-is"];
-    let mut owned_args: Vec<String> = Vec::new();
-    for quote in quotes {
-        args.push("--quote");
-        owned_args.push(quote.clone());
-        args.push(owned_args.last().unwrap());
-    }
+    let mut args = quote_args(quotes);
     let url = ftp_url(server, "/", true);
-    args.push(&url);
+    args.push(url);
     let out = run_curl(server, &args)?;
     status_result(out, "ftp command")
 }
 
-fn run_curl(server: &Server, args: &[&str]) -> Result<std::process::Output> {
+fn base_args() -> Vec<String> {
+    ["--fail", "--silent", "--show-error", "--path-as-is"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+fn base_args_with_url(url: String) -> Vec<String> {
+    let mut args = base_args();
+    args.push(url);
+    args
+}
+
+fn quote_args(quotes: &[String]) -> Vec<String> {
+    let mut args = base_args();
+    for quote in quotes {
+        args.push("--quote".into());
+        args.push(quote.clone());
+    }
+    args
+}
+
+fn run_curl(server: &Server, args: &[String]) -> Result<std::process::Output> {
     let mut child = Command::new("curl")
         .arg("--config")
         .arg("-")
@@ -85,24 +113,37 @@ fn run_curl(server: &Server, args: &[&str]) -> Result<std::process::Output> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| anyhow!("failed to run curl for FTP: {e}. Install curl to use FTP profiles."))?;
+        .map_err(|e| {
+            anyhow!("failed to run curl for FTP: {e}. Install curl to use FTP profiles.")
+        })?;
 
-    let password = vault::get_secret(&vault::secret_ref(&server.id)).ok().flatten().unwrap_or_default();
-    let config = format!("user = \"{}\"\n", curl_cfg_value(&format!("{}:{password}", server.username)));
+    let password = vault::get_secret(&vault::secret_ref(&server.id))
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let config = format!(
+        "user = \"{}\"\n",
+        curl_cfg_value(&format!("{}:{password}", server.username))
+    );
     child
         .stdin
         .as_mut()
         .ok_or_else(|| anyhow!("failed to open curl stdin"))?
         .write_all(config.as_bytes())?;
 
-    child.wait_with_output().map_err(|e| anyhow!("failed to read curl output: {e}"))
+    child
+        .wait_with_output()
+        .map_err(|e| anyhow!("failed to read curl output: {e}"))
 }
 
 fn status_result(out: std::process::Output, action: &str) -> Result<()> {
     if out.status.success() {
         Ok(())
     } else {
-        Err(anyhow!("{action} failed: {}", String::from_utf8_lossy(&out.stderr)))
+        Err(anyhow!(
+            "{action} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ))
     }
 }
 
@@ -128,9 +169,13 @@ fn parse_list_line(line: &str) -> RemoteFile {
 }
 
 fn ftp_url(server: &Server, path: &str, directory: bool) -> String {
-    let port = if server.port == 22 { 21 } else { server.port };
     let normalized = normalize_path(path, directory);
-    format!("ftp://{}:{}{}", server.host, port, percent_encode_path(&normalized))
+    format!(
+        "ftp://{}:{}{}",
+        server.host,
+        server.ftp_port(),
+        percent_encode_path(&normalized)
+    )
 }
 
 fn normalize_path(path: &str, directory: bool) -> String {
@@ -151,7 +196,9 @@ fn percent_encode_path(path: &str) -> String {
     let mut encoded = String::with_capacity(path.len());
     for byte in path.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => encoded.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                encoded.push(byte as char)
+            }
             _ => encoded.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -166,10 +213,49 @@ fn ftp_command_path(path: &str) -> String {
     }
 }
 
-fn remote_basename(path: &str) -> &str {
-    path.trim_end_matches('/').rsplit('/').next().filter(|name| !name.is_empty()).unwrap_or("download")
+fn curl_cfg_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "")
 }
 
-fn curl_cfg_value(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "")
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_owned_quote_arguments_in_order() {
+        let quotes = vec!["RNFR /old name".to_string(), "RNTO /new name".to_string()];
+        assert_eq!(
+            quote_args(&quotes),
+            vec![
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--path-as-is",
+                "--quote",
+                "RNFR /old name",
+                "--quote",
+                "RNTO /new name",
+            ]
+        );
+    }
+
+    #[test]
+    fn normalizes_and_encodes_remote_paths() {
+        assert_eq!(normalize_path("folder name", true), "/folder name/");
+        assert_eq!(
+            percent_encode_path("/folder name/file#1"),
+            "/folder%20name/file%231"
+        );
+    }
+
+    #[test]
+    fn parses_unix_list_entries_with_spaces() {
+        let file = parse_list_line("-rw-r--r-- 1 user group 42 Jan 01 12:00 report final.txt");
+        assert_eq!(file.name, "report final.txt");
+        assert_eq!(file.size, 42);
+        assert!(!file.is_dir);
+    }
 }

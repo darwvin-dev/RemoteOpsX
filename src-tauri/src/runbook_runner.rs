@@ -43,7 +43,11 @@ pub fn run_step(server: &Server, step: &crate::models::RunbookStep) -> StepResul
     }
     if let Some(sp) = &step.success_pattern {
         if !sp.is_empty() {
-            status = if combined.contains(sp.as_str()) { "success" } else { "failure" };
+            status = if combined.contains(sp.as_str()) {
+                "success"
+            } else {
+                "failure"
+            };
         }
     }
 
@@ -81,13 +85,8 @@ pub fn builtins() -> Vec<(&'static str, &'static str, &'static str)> {
             "Show status, restart a unit (confirmation required) and verify it came back.",
             RESTART_SERVICE,
         ),
-        (
-            "Docker Container Diagnosis",
-            "List containers, resource usage and recent logs for troubleshooting.",
-            DOCKER_DIAGNOSIS,
-        ),
         ("VoIP Server Check", "Check OpenSIPS/rtpengine state, SIP ports and recent logs.", VOIP_CHECK),
-        ("SMPP Gateway Check", "Check SMPP listener ports, failed units, containers and logs.", SMPP_CHECK),
+        ("SMPP Gateway Check", "Check SMPP listener ports, failed units and logs.", SMPP_CHECK),
     ]
 }
 
@@ -111,46 +110,6 @@ steps:
   - name: Listening ports
     command: ss -tulpen | head -50
 "#;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn all_builtins_parse() {
-        for (name, _desc, yaml) in builtins() {
-            let spec = parse(yaml).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
-            assert!(!spec.steps.is_empty(), "{name} has no steps");
-            for step in &spec.steps {
-                assert!(!step.command.trim().is_empty(), "{name} has an empty command");
-            }
-        }
-    }
-
-    #[test]
-    fn linux_health_check_has_expected_steps() {
-        let spec = parse(LINUX_HEALTH_CHECK).unwrap();
-        assert_eq!(spec.name, "Linux Health Check");
-        assert_eq!(spec.steps.len(), 7);
-        assert_eq!(spec.steps[0].command, "hostnamectl");
-    }
-
-    #[test]
-    fn restart_service_step_requires_confirmation() {
-        let spec = parse(RESTART_SERVICE).unwrap();
-        let restart = spec.steps.iter().find(|s| s.name == "Restart unit").unwrap();
-        assert!(restart.requires_confirmation);
-        // success_pattern is carried through
-        let verify = spec.steps.iter().find(|s| s.name == "Verify active").unwrap();
-        assert_eq!(verify.success_pattern.as_deref(), Some("active"));
-    }
-
-    #[test]
-    fn variables_are_parsed() {
-        let spec = parse(RESTART_SERVICE).unwrap();
-        assert_eq!(spec.variables.get("service").map(String::as_str), Some("nginx"));
-    }
-}
 
 const DIAGNOSE_DISK: &str = r#"name: Diagnose High Disk Usage
 description: Locate what is filling the disk.
@@ -196,19 +155,6 @@ steps:
     success_pattern: active
 "#;
 
-const DOCKER_DIAGNOSIS: &str = r#"name: Docker Container Diagnosis
-description: Inspect Docker containers and resource usage.
-target_os: linux
-variables: {}
-steps:
-  - name: Containers
-    command: docker ps -a
-  - name: Resource usage
-    command: docker stats --no-stream
-  - name: Compose status
-    command: docker compose ps 2>/dev/null || true
-"#;
-
 const VOIP_CHECK: &str = r#"name: VoIP Server Check
 description: OpenSIPS / rtpengine health.
 target_os: linux
@@ -222,8 +168,6 @@ steps:
     command: "ss -lunpt | grep -E ':5060|:5061' || true"
   - name: OpenSIPS logs
     command: journalctl -u opensips -n 100 --no-pager || true
-  - name: Docker containers
-    command: docker ps || true
 "#;
 
 const SMPP_CHECK: &str = r#"name: SMPP Gateway Check
@@ -235,8 +179,6 @@ steps:
     command: "ss -tunlp | grep -E ':2775|:2776|:3550' || true"
   - name: Failed services
     command: systemctl --failed --no-pager
-  - name: Docker containers
-    command: docker ps || true
   - name: Recent logs
     command: journalctl -n 150 --no-pager
   - name: Disk usage
@@ -244,3 +186,56 @@ steps:
   - name: Memory
     command: free -m
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_builtins_parse() {
+        for (name, _desc, yaml) in builtins() {
+            let spec = parse(yaml).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
+            assert!(!spec.steps.is_empty(), "{name} has no steps");
+            for step in &spec.steps {
+                assert!(
+                    !step.command.trim().is_empty(),
+                    "{name} has an empty command"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn linux_health_check_has_expected_steps() {
+        let spec = parse(LINUX_HEALTH_CHECK).unwrap();
+        assert_eq!(spec.name, "Linux Health Check");
+        assert_eq!(spec.steps.len(), 7);
+        assert_eq!(spec.steps[0].command, "hostnamectl");
+    }
+
+    #[test]
+    fn restart_service_step_requires_confirmation() {
+        let spec = parse(RESTART_SERVICE).unwrap();
+        let restart = spec
+            .steps
+            .iter()
+            .find(|s| s.name == "Restart unit")
+            .unwrap();
+        assert!(restart.requires_confirmation);
+        let verify = spec
+            .steps
+            .iter()
+            .find(|s| s.name == "Verify active")
+            .unwrap();
+        assert_eq!(verify.success_pattern.as_deref(), Some("active"));
+    }
+
+    #[test]
+    fn variables_are_parsed() {
+        let spec = parse(RESTART_SERVICE).unwrap();
+        assert_eq!(
+            spec.variables.get("service").map(String::as_str),
+            Some("nginx")
+        );
+    }
+}

@@ -58,16 +58,12 @@ export const runbookRunsList = (limit = 50) => invoke<RunbookRun[]>("runbook_run
 export const serviceAction = (serverId: string, action: string, unit: string) =>
   invoke<CommandOutput>("service_action", { serverId, action, unit });
 
-// ---- Docker ----
-export const dockerAction = (serverId: string, action: string, container?: string) =>
-  invoke<CommandOutput>("docker_action", { serverId, action, container: container ?? null });
-
 // ---- SFTP ----
 export const sftpList = (serverId: string, path: string) => invoke<RemoteFile[]>("sftp_list", { serverId, path });
 export const sftpUpload = (serverId: string, localPath: string, remoteDir: string) =>
   invoke<void>("sftp_upload", { serverId, localPath, remoteDir });
-export const sftpDownload = (serverId: string, remotePath: string, localDir: string) =>
-  invoke<void>("sftp_download", { serverId, remotePath, localDir });
+export const sftpDownload = (serverId: string, remotePath: string, localPath: string) =>
+  invoke<void>("sftp_download", { serverId, remotePath, localPath });
 export const sftpDelete = (serverId: string, remotePath: string) => invoke<void>("sftp_delete", { serverId, remotePath });
 export const sftpRename = (serverId: string, from: string, to: string) =>
   invoke<void>("sftp_rename", { serverId, from, to });
@@ -76,8 +72,8 @@ export const sftpRename = (serverId: string, from: string, to: string) =>
 export const ftpList = (serverId: string, path: string) => invoke<RemoteFile[]>("ftp_list", { serverId, path });
 export const ftpUpload = (serverId: string, localPath: string, remoteDir: string) =>
   invoke<void>("ftp_upload", { serverId, localPath, remoteDir });
-export const ftpDownload = (serverId: string, remotePath: string, localDir: string) =>
-  invoke<void>("ftp_download", { serverId, remotePath, localDir });
+export const ftpDownload = (serverId: string, remotePath: string, localPath: string) =>
+  invoke<void>("ftp_download", { serverId, remotePath, localPath });
 export const ftpDelete = (serverId: string, remotePath: string) => invoke<void>("ftp_delete", { serverId, remotePath });
 export const ftpRename = (serverId: string, from: string, to: string) =>
   invoke<void>("ftp_rename", { serverId, from, to });

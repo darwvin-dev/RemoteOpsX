@@ -64,21 +64,51 @@ fn server_get(state: State<AppState>, id: String) -> Result<Server, String> {
 /// Create or update a profile. The transient `secret` is written to the OS
 /// keyring (never SQLite); only a reference is recorded.
 #[tauri::command]
-fn server_save(state: State<AppState>, input: ServerInput) -> Result<String, String> {
-    let id = {
-        let conn = state.db.lock().unwrap();
-        e(database::upsert_server(&conn, &input))?
-    };
+fn server_save(state: State<AppState>, mut input: ServerInput) -> Result<String, String> {
+    e(database::validate_server_input(&input))?;
+    if input.id.is_none() {
+        input.id = Some(uuid::Uuid::new_v4().to_string());
+    }
+    let id = input.id.clone().expect("id assigned above");
+    let sref = vault::secret_ref(&id);
 
-    if let Some(secret) = &input.secret {
-        if !secret.is_empty() {
-            let sref = vault::secret_ref(&id);
-            e(vault::set_secret(&sref, secret))?;
-            let conn = state.db.lock().unwrap();
-            e(database::record_credential(&conn, &id, &sref, &input.auth_type))?;
+    if input.auth_type == "key" {
+        let conn = state.db.lock().unwrap();
+        let saved = e(database::save_server_profile(&conn, &input, None, true))?;
+        drop(conn);
+        let _ = vault::delete_secret(&sref);
+        return Ok(saved);
+    }
+
+    let supplied = input.secret.as_deref().filter(|secret| !secret.is_empty());
+    let previous = e(vault::get_secret(&sref))?;
+    if supplied.is_none() && previous.is_none() {
+        return Err("a password is required for password authentication".into());
+    }
+    if let Some(secret) = supplied {
+        e(vault::set_secret(&sref, secret))?;
+    }
+
+    let saved = {
+        let conn = state.db.lock().unwrap();
+        database::save_server_profile(&conn, &input, Some(&sref), false)
+    };
+    match saved {
+        Ok(saved) => Ok(saved),
+        Err(err) => {
+            if supplied.is_some() {
+                match previous {
+                    Some(previous) => {
+                        let _ = vault::set_secret(&sref, &previous);
+                    }
+                    None => {
+                        let _ = vault::delete_secret(&sref);
+                    }
+                }
+            }
+            Err(err.to_string())
         }
     }
-    Ok(id)
 }
 
 #[tauri::command]
@@ -102,7 +132,9 @@ fn pty_spawn(
     rows: u16,
 ) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
-    e(state.pty.spawn(app, session_id.clone(), &server, cols, rows))?;
+    e(state
+        .pty
+        .spawn(app, session_id.clone(), &server, cols, rows))?;
     // Record the session in SQLite for the sessions history.
     let conn = state.db.lock().unwrap();
     let _ = database::open_session(&conn, &session_id, &server_id, "ssh");
@@ -115,7 +147,12 @@ fn pty_write(state: State<AppState>, session_id: String, data: Vec<u8>) -> Resul
 }
 
 #[tauri::command]
-fn pty_resize(state: State<AppState>, session_id: String, cols: u16, rows: u16) -> Result<(), String> {
+fn pty_resize(
+    state: State<AppState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
     e(state.pty.resize(&session_id, cols, rows))
 }
 
@@ -138,7 +175,11 @@ fn health_collect(state: State<AppState>, server_id: String) -> Result<HealthSna
 // =================== Generic remote exec (logs panel, etc.) ===================
 
 #[tauri::command]
-fn run_remote(state: State<AppState>, server_id: String, command: String) -> Result<CommandOutput, String> {
+fn run_remote(
+    state: State<AppState>,
+    server_id: String,
+    command: String,
+) -> Result<CommandOutput, String> {
     let server = load_server(&state, &server_id)?;
     e(ssh_manager::run_remote(&server, &command))
 }
@@ -178,13 +219,23 @@ fn runbook_save(
     // Validate YAML before saving.
     e(runbook_runner::parse(&content_yaml))?;
     let conn = state.db.lock().unwrap();
-    e(database::save_runbook(&conn, &name, &description, &content_yaml, id.as_deref()))
+    e(database::save_runbook(
+        &conn,
+        &name,
+        &description,
+        &content_yaml,
+        id.as_deref(),
+    ))
 }
 
 /// Run a single runbook step over SSH. The frontend drives the loop so it can
 /// pause for confirmation between destructive steps.
 #[tauri::command]
-fn runbook_run_step(state: State<AppState>, server_id: String, step: RunbookStep) -> Result<StepResult, String> {
+fn runbook_run_step(
+    state: State<AppState>,
+    server_id: String,
+    step: RunbookStep,
+) -> Result<StepResult, String> {
     let server = load_server(&state, &server_id)?;
     Ok(runbook_runner::run_step(&server, &step))
 }
@@ -216,7 +267,10 @@ fn runbook_record_run(
 }
 
 #[tauri::command]
-fn runbook_runs_list(state: State<AppState>, limit: Option<i64>) -> Result<Vec<RunbookRun>, String> {
+fn runbook_runs_list(
+    state: State<AppState>,
+    limit: Option<i64>,
+) -> Result<Vec<RunbookRun>, String> {
     let conn = state.db.lock().unwrap();
     e(database::list_runbook_runs(&conn, limit.unwrap_or(50)))
 }
@@ -224,7 +278,12 @@ fn runbook_runs_list(state: State<AppState>, limit: Option<i64>) -> Result<Vec<R
 // =================== Services (systemd) ===================
 
 #[tauri::command]
-fn service_action(state: State<AppState>, server_id: String, action: String, unit: String) -> Result<CommandOutput, String> {
+fn service_action(
+    state: State<AppState>,
+    server_id: String,
+    action: String,
+    unit: String,
+) -> Result<CommandOutput, String> {
     let server = load_server(&state, &server_id)?;
     let unit_q = shell_quote(&unit);
     let cmd = match action.as_str() {
@@ -239,53 +298,57 @@ fn service_action(state: State<AppState>, server_id: String, action: String, uni
     e(ssh_manager::run_remote(&server, &cmd))
 }
 
-// =================== Docker ===================
-
-#[tauri::command]
-fn docker_action(state: State<AppState>, server_id: String, action: String, container: Option<String>) -> Result<CommandOutput, String> {
-    let server = load_server(&state, &server_id)?;
-    let c = container.map(|c| shell_quote(&c)).unwrap_or_default();
-    let cmd = match action.as_str() {
-        "ps" => "docker ps -a --format '{{.Names}}|{{.Status}}|{{.Image}}|{{.Ports}}'".to_string(),
-        "stats" => "docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemPerc}}|{{.MemUsage}}'".to_string(),
-        "compose-ps" => "docker compose ps 2>/dev/null || true".to_string(),
-        "logs" => format!("docker logs --tail 200 {c}"),
-        "start" => format!("docker start {c}"),
-        "stop" => format!("docker stop {c}"),
-        "restart" => format!("docker restart {c}"),
-        other => return Err(format!("unknown docker action: {other}")),
-    };
-    e(ssh_manager::run_remote(&server, &cmd))
-}
-
 // =================== SFTP ===================
 
 #[tauri::command]
-fn sftp_list(state: State<AppState>, server_id: String, path: String) -> Result<Vec<RemoteFile>, String> {
+fn sftp_list(
+    state: State<AppState>,
+    server_id: String,
+    path: String,
+) -> Result<Vec<RemoteFile>, String> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::list_dir(&server, &path))
 }
 
 #[tauri::command]
-fn sftp_upload(state: State<AppState>, server_id: String, local_path: String, remote_dir: String) -> Result<(), String> {
+fn sftp_upload(
+    state: State<AppState>,
+    server_id: String,
+    local_path: String,
+    remote_dir: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::upload(&server, &local_path, &remote_dir))
 }
 
 #[tauri::command]
-fn sftp_download(state: State<AppState>, server_id: String, remote_path: String, local_dir: String) -> Result<(), String> {
+fn sftp_download(
+    state: State<AppState>,
+    server_id: String,
+    remote_path: String,
+    local_path: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
-    e(sftp_manager::download(&server, &remote_path, &local_dir))
+    e(sftp_manager::download(&server, &remote_path, &local_path))
 }
 
 #[tauri::command]
-fn sftp_delete(state: State<AppState>, server_id: String, remote_path: String) -> Result<(), String> {
+fn sftp_delete(
+    state: State<AppState>,
+    server_id: String,
+    remote_path: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::delete(&server, &remote_path))
 }
 
 #[tauri::command]
-fn sftp_rename(state: State<AppState>, server_id: String, from: String, to: String) -> Result<(), String> {
+fn sftp_rename(
+    state: State<AppState>,
+    server_id: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::rename(&server, &from, &to))
 }
@@ -293,31 +356,54 @@ fn sftp_rename(state: State<AppState>, server_id: String, from: String, to: Stri
 // =================== FTP ===================
 
 #[tauri::command]
-fn ftp_list(state: State<AppState>, server_id: String, path: String) -> Result<Vec<RemoteFile>, String> {
+fn ftp_list(
+    state: State<AppState>,
+    server_id: String,
+    path: String,
+) -> Result<Vec<RemoteFile>, String> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::list_dir(&server, &path))
 }
 
 #[tauri::command]
-fn ftp_upload(state: State<AppState>, server_id: String, local_path: String, remote_dir: String) -> Result<(), String> {
+fn ftp_upload(
+    state: State<AppState>,
+    server_id: String,
+    local_path: String,
+    remote_dir: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::upload(&server, &local_path, &remote_dir))
 }
 
 #[tauri::command]
-fn ftp_download(state: State<AppState>, server_id: String, remote_path: String, local_dir: String) -> Result<(), String> {
+fn ftp_download(
+    state: State<AppState>,
+    server_id: String,
+    remote_path: String,
+    local_path: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
-    e(ftp_manager::download(&server, &remote_path, &local_dir))
+    e(ftp_manager::download(&server, &remote_path, &local_path))
 }
 
 #[tauri::command]
-fn ftp_delete(state: State<AppState>, server_id: String, remote_path: String) -> Result<(), String> {
+fn ftp_delete(
+    state: State<AppState>,
+    server_id: String,
+    remote_path: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::delete(&server, &remote_path))
 }
 
 #[tauri::command]
-fn ftp_rename(state: State<AppState>, server_id: String, from: String, to: String) -> Result<(), String> {
+fn ftp_rename(
+    state: State<AppState>,
+    server_id: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::rename(&server, &from, &to))
 }
@@ -325,13 +411,21 @@ fn ftp_rename(state: State<AppState>, server_id: String, from: String, to: Strin
 // =================== Remote desktop ===================
 
 #[tauri::command]
-fn rdp_launch(state: State<AppState>, server_id: String, options: rdp_adapter::RdpOptions) -> Result<(), String> {
+fn rdp_launch(
+    state: State<AppState>,
+    server_id: String,
+    options: rdp_adapter::RdpOptions,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(rdp_adapter::launch(&server, &options))
 }
 
 #[tauri::command]
-fn vnc_launch(state: State<AppState>, server_id: String, options: vnc_adapter::VncOptions) -> Result<(), String> {
+fn vnc_launch(
+    state: State<AppState>,
+    server_id: String,
+    options: vnc_adapter::VncOptions,
+) -> Result<(), String> {
     let server = load_server(&state, &server_id)?;
     e(vnc_adapter::launch(&server, &options))
 }
@@ -429,7 +523,6 @@ pub fn run() {
             runbook_record_run,
             runbook_runs_list,
             service_action,
-            docker_action,
             sftp_list,
             sftp_upload,
             sftp_download,

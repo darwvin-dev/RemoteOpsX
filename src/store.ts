@@ -32,7 +32,7 @@ interface AppStore {
   rightPanel: RightPanelView;
   bottomPanelOpen: boolean;
   bottomPanel: BottomPanelView;
-  // the server whose health/services/docker the right panel reflects
+  // the server whose health/services the right panel reflects
   focusedServerId: string | null;
   healthIntervalMs: number;
   alerts: Alert[];

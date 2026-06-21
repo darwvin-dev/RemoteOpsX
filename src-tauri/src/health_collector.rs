@@ -6,7 +6,7 @@
 //! the previous snapshot held per-server in `HealthState`.
 //!
 //! Nothing is installed on the remote host; only standard /proc, /sys and
-//! coreutils/`ss`/`systemctl`/`docker` reads are used.
+//! coreutils/`ss`/`systemctl` reads are used.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -33,8 +33,6 @@ echo '@@PSCPU@@'; ps -eo pid,comm,%cpu,%mem --sort=-%cpu 2>/dev/null | head -11;
 echo '@@PSMEM@@'; ps -eo pid,comm,%cpu,%mem --sort=-%mem 2>/dev/null | head -11;
 echo '@@PORTS@@'; (ss -tulpen 2>/dev/null || ss -tuln 2>/dev/null) | head -60;
 echo '@@FAILED@@'; systemctl --failed --no-pager --plain --no-legend 2>/dev/null | head -40;
-echo '@@DOCKERPS@@'; if command -v docker >/dev/null 2>&1; then docker ps --format '{{.Names}}|{{.Status}}|{{.Image}}' 2>/dev/null; fi;
-echo '@@DOCKERSTATS@@'; if command -v docker >/dev/null 2>&1; then docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemPerc}}' 2>/dev/null; fi;
 echo '@@END@@'
 "#;
 
@@ -53,15 +51,6 @@ pub struct ProcInfo {
     pub command: String,
     pub cpu: f64,
     pub mem: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DockerContainer {
-    pub name: String,
-    pub status: String,
-    pub image: String,
-    pub cpu_percent: Option<f64>,
-    pub mem_percent: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -87,8 +76,6 @@ pub struct HealthSnapshot {
     pub top_mem: Vec<ProcInfo>,
     pub listening_ports: Vec<String>,
     pub failed_services: Vec<String>,
-    pub docker: Vec<DockerContainer>,
-    pub docker_available: bool,
     pub warnings: Vec<String>,
 }
 
@@ -122,12 +109,22 @@ impl HealthState {
         let sections = split_sections(&out.stdout);
         let now_ms = chrono::Utc::now().timestamp_millis();
 
-        let mut snap = HealthSnapshot::default();
-
-        // OS / kernel / host
-        snap.os_name = parse_os_name(sections.get("OS").map(|s| s.as_str()).unwrap_or(""));
-        snap.kernel = sections.get("KERNEL").cloned().unwrap_or_default().trim().to_string();
-        snap.hostname = sections.get("HOST").cloned().unwrap_or_default().trim().to_string();
+        let mut snap = HealthSnapshot {
+            os_name: parse_os_name(sections.get("OS").map(|s| s.as_str()).unwrap_or("")),
+            kernel: sections
+                .get("KERNEL")
+                .cloned()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            hostname: sections
+                .get("HOST")
+                .cloned()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            ..HealthSnapshot::default()
+        };
 
         // uptime
         if let Some(u) = sections.get("UPTIME") {
@@ -145,7 +142,8 @@ impl HealthState {
         }
 
         // cpu (needs previous sample)
-        let (cpu_idle, cpu_total) = parse_cpu(sections.get("CPU").map(|s| s.as_str()).unwrap_or(""));
+        let (cpu_idle, cpu_total) =
+            parse_cpu(sections.get("CPU").map(|s| s.as_str()).unwrap_or(""));
 
         // memory
         let mem = parse_meminfo(sections.get("MEM").map(|s| s.as_str()).unwrap_or(""));
@@ -169,7 +167,13 @@ impl HealthState {
         // ports
         snap.listening_ports = sections
             .get("PORTS")
-            .map(|s| s.lines().skip(1).map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+            .map(|s| {
+                s.lines()
+                    .skip(1)
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
 
         // failed services
@@ -182,14 +186,6 @@ impl HealthState {
                     .collect()
             })
             .unwrap_or_default();
-
-        // docker
-        let (docker, available) = parse_docker(
-            sections.get("DOCKERPS").map(|s| s.as_str()).unwrap_or(""),
-            sections.get("DOCKERSTATS").map(|s| s.as_str()).unwrap_or(""),
-        );
-        snap.docker = docker;
-        snap.docker_available = available;
 
         // rates from previous sample
         {
@@ -238,16 +234,17 @@ fn build_warnings(s: &HealthSnapshot) -> Vec<String> {
     }
     for d in &s.disks {
         if d.use_percent > 85.0 {
-            w.push(format!("Disk {} at {:.0}% ({})", d.mount, d.use_percent, d.filesystem));
+            w.push(format!(
+                "Disk {} at {:.0}% ({})",
+                d.mount, d.use_percent, d.filesystem
+            ));
         }
     }
     if !s.failed_services.is_empty() {
-        w.push(format!("{} failed systemd service(s)", s.failed_services.len()));
-    }
-    for c in &s.docker {
-        if c.status.to_lowercase().contains("exited") {
-            w.push(format!("Docker container '{}' exited", c.name));
-        }
+        w.push(format!(
+            "{} failed systemd service(s)",
+            s.failed_services.len()
+        ));
     }
     w
 }
@@ -321,7 +318,6 @@ fn parse_meminfo(s: &str) -> (u64, u64, u64, u64) {
                 return rest
                     .trim()
                     .trim_start_matches(':')
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
@@ -392,39 +388,6 @@ fn parse_ps(s: &str) -> Vec<ProcInfo> {
     out
 }
 
-fn parse_docker(ps: &str, stats: &str) -> (Vec<DockerContainer>, bool) {
-    let ps = ps.trim();
-    // No docker binary -> the section is empty.
-    if ps.is_empty() && stats.trim().is_empty() {
-        return (Vec::new(), false);
-    }
-    let mut stat_map: HashMap<String, (Option<f64>, Option<f64>)> = HashMap::new();
-    for line in stats.lines() {
-        let p: Vec<&str> = line.split('|').collect();
-        if p.len() == 3 {
-            let cpu = p[1].trim_end_matches('%').parse().ok();
-            let mem = p[2].trim_end_matches('%').parse().ok();
-            stat_map.insert(p[0].to_string(), (cpu, mem));
-        }
-    }
-    let mut out = Vec::new();
-    for line in ps.lines() {
-        let p: Vec<&str> = line.split('|').collect();
-        if p.len() >= 3 {
-            let name = p[0].to_string();
-            let (cpu, mem) = stat_map.get(&name).copied().unwrap_or((None, None));
-            out.push(DockerContainer {
-                name,
-                status: p[1].to_string(),
-                image: p[2].to_string(),
-                cpu_percent: cpu,
-                mem_percent: mem,
-            });
-        }
-    }
-    (out, true)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,24 +447,6 @@ mod tests {
     }
 
     #[test]
-    fn docker_joins_ps_with_stats() {
-        let ps = "web|Up 3 hours|nginx:latest\napi|Exited (1) 2 min ago|api:1.0";
-        let stats = "web|10.50%|2.10%";
-        let (containers, available) = parse_docker(ps, stats);
-        assert!(available);
-        assert_eq!(containers.len(), 2);
-        assert_eq!(containers[0].cpu_percent, Some(10.50));
-        assert_eq!(containers[1].cpu_percent, None); // no stats for exited
-    }
-
-    #[test]
-    fn docker_absent_when_empty() {
-        let (containers, available) = parse_docker("", "");
-        assert!(!available);
-        assert!(containers.is_empty());
-    }
-
-    #[test]
     fn sections_split_on_markers() {
         let raw = "@@OS@@\nPRETTY_NAME=\"Arch Linux\"\n@@KERNEL@@\n6.0.0\n@@END@@\nignored";
         let map = split_sections(raw);
@@ -512,10 +457,18 @@ mod tests {
 
     #[test]
     fn warnings_fire_on_thresholds() {
-        let mut s = HealthSnapshot::default();
-        s.cpu_percent = 95.0;
-        s.mem_percent = 30.0;
-        s.disks.push(DiskInfo { filesystem: "/dev/sda1".into(), size_kb: 100, used_kb: 90, use_percent: 90.0, mount: "/".into() });
+        let mut s = HealthSnapshot {
+            cpu_percent: 95.0,
+            mem_percent: 30.0,
+            ..HealthSnapshot::default()
+        };
+        s.disks.push(DiskInfo {
+            filesystem: "/dev/sda1".into(),
+            size_kb: 100,
+            used_kb: 90,
+            use_percent: 90.0,
+            mount: "/".into(),
+        });
         s.failed_services.push("foo.service".into());
         let w = build_warnings(&s);
         assert!(w.iter().any(|x| x.contains("CPU")));

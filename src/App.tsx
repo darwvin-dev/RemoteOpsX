@@ -20,9 +20,20 @@ export default function App() {
   const setBottomPanel = useStore((s) => s.setBottomPanel);
   const rightCollapsed = useStore((s) => s.tabs.length === 0 && s.focusedServerId === null);
   const [editing, setEditing] = useState<Server | null | undefined>(undefined); // undefined = closed
+  const [initialFolder, setInitialFolder] = useState<string | undefined>(undefined);
   const [showRunbooks, setShowRunbooks] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  function openNewServer(folder?: string) {
+    setInitialFolder(folder);
+    setEditing(null);
+  }
+
+  function openEditServer(server: Server) {
+    setInitialFolder(undefined);
+    setEditing(server);
+  }
 
   useEffect(() => {
     void loadServers();
@@ -51,7 +62,7 @@ export default function App() {
         </div>
         <button className="command-trigger" onClick={() => setPaletteOpen(true)}>
           <span>Search servers, actions, runbooks…</span>
-          <kbd>⌘K</kbd>
+          <kbd>Ctrl K</kbd>
         </button>
         <div className="spacer" />
         <div className="top-stats" aria-label="Workspace status">
@@ -65,12 +76,12 @@ export default function App() {
         <button className="tiny" onClick={() => setShowTunnels(true)}>⇄ Tunnels</button>
       </header>
 
-      <ServerSidebar onNew={() => setEditing(null)} onEdit={(s) => setEditing(s)} />
+      <ServerSidebar onNew={openNewServer} onEdit={openEditServer} />
 
       <main className="main">
         <TabBar />
         <TabContent
-          onNewServer={() => setEditing(null)}
+          onNewServer={openNewServer}
           onOpenRunbooks={() => setShowRunbooks(true)}
           onOpenTunnels={() => setShowTunnels(true)}
         />
@@ -84,13 +95,20 @@ export default function App() {
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        onNewServer={() => setEditing(null)}
+        onNewServer={() => openNewServer()}
         onOpenRunbooks={() => setShowRunbooks(true)}
         onOpenTunnels={() => setShowTunnels(true)}
       />
 
       {editing !== undefined && (
-        <ServerForm server={editing} onClose={() => setEditing(undefined)} />
+        <ServerForm
+          server={editing}
+          initialFolder={initialFolder}
+          onClose={() => {
+            setEditing(undefined);
+            setInitialFolder(undefined);
+          }}
+        />
       )}
       {showRunbooks && <RunbookLauncher onClose={() => setShowRunbooks(false)} />}
       {showTunnels && <TunnelManager onClose={() => setShowTunnels(false)} />}

@@ -6,11 +6,13 @@
   "description": "RemoteOpsX - a unified Linux remote operations workspace (SSH/SFTP/RDP/VNC + live server health + runbooks)",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "app:build:arch": "NO_STRIP=1 PKG_CONFIG_PATH=\"$PWD/scripts/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}\" tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
@@ -28,8 +30,10 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.61.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^3.2.6"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

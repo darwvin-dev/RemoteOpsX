@@ -14,6 +14,12 @@ pub struct Server {
     pub name: String,
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub ftp_port: Option<u16>,
+    #[serde(default)]
+    pub rdp_port: Option<u16>,
+    #[serde(default)]
+    pub vnc_port: Option<u16>,
     pub username: String,
     /// "ssh" | "sftp" | "rdp" | "vnc"
     #[serde(default)]
@@ -41,6 +47,20 @@ fn default_env() -> String {
     "dev".to_string()
 }
 
+impl Server {
+    pub fn ftp_port(&self) -> u16 {
+        self.ftp_port.unwrap_or(21)
+    }
+
+    pub fn rdp_port(&self) -> u16 {
+        self.rdp_port.unwrap_or(3389)
+    }
+
+    pub fn vnc_port(&self) -> u16 {
+        self.vnc_port.unwrap_or(5900)
+    }
+}
+
 /// Payload used when creating/updating a profile from the UI. A transient
 /// `secret` field carries the password / passphrase only in memory; it is
 /// written straight to the keyring and never persisted to SQLite.
@@ -51,6 +71,12 @@ pub struct ServerInput {
     pub name: String,
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub ftp_port: Option<u16>,
+    #[serde(default)]
+    pub rdp_port: Option<u16>,
+    #[serde(default)]
+    pub vnc_port: Option<u16>,
     pub username: String,
     #[serde(default)]
     pub protocols: Vec<String>,
@@ -170,4 +196,50 @@ pub struct RemoteFile {
     pub is_dir: bool,
     pub size: u64,
     pub permissions: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server() -> Server {
+        Server {
+            id: "server-1".into(),
+            name: "test".into(),
+            host: "example.test".into(),
+            port: 2222,
+            ftp_port: None,
+            rdp_port: None,
+            vnc_port: None,
+            username: "ops".into(),
+            protocols: vec!["ssh".into()],
+            auth_type: "key".into(),
+            private_key_path: None,
+            tags: vec![],
+            group_name: None,
+            environment: "dev".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn protocol_ports_use_standard_defaults() {
+        let server = server();
+        assert_eq!(server.ftp_port(), 21);
+        assert_eq!(server.rdp_port(), 3389);
+        assert_eq!(server.vnc_port(), 5900);
+    }
+
+    #[test]
+    fn protocol_ports_honor_profile_overrides() {
+        let mut server = server();
+        server.ftp_port = Some(2121);
+        server.rdp_port = Some(3390);
+        server.vnc_port = Some(5901);
+        assert_eq!(server.ftp_port(), 2121);
+        assert_eq!(server.rdp_port(), 3390);
+        assert_eq!(server.vnc_port(), 5901);
+    }
 }

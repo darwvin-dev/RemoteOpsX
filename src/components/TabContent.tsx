@@ -85,6 +85,7 @@ function StartDashboard({
 }) {
   const productionCount = servers.filter((server) => server.environment === "production").length;
   const protocolCount = new Set(servers.flatMap((server) => server.protocols)).size;
+  const folderCount = new Set(servers.map((server) => server.group_name?.trim()).filter(Boolean)).size;
 
   return (
     <div className="start-dashboard">
@@ -107,7 +108,7 @@ function StartDashboard({
         <div className="hero-visual" aria-hidden="true">
           <div className="orbit one" />
           <div className="orbit two" />
-          <div className="ops-node center">RX</div>
+          <div className="ops-node center">ROX</div>
           <div className="ops-node n1">SSH</div>
           <div className="ops-node n2">SFTP</div>
           <div className="ops-node n3">RDP</div>
@@ -122,9 +123,14 @@ function StartDashboard({
           <small>{productionCount} production targets</small>
         </div>
         <div className="insight-card">
+          <span className="insight-value">{folderCount}</span>
+          <span className="insight-label">Folders</span>
+          <small>Group hosts by team, customer or environment</small>
+        </div>
+        <div className="insight-card">
           <span className="insight-value">{protocolCount}</span>
-          <span className="insight-label">Protocols enabled</span>
-          <small>SSH, SFTP/FTP files, desktops and logs</small>
+          <span className="insight-label">Protocols</span>
+          <small>SSH, files, desktops and logs</small>
         </div>
         <div className="insight-card">
           <span className="insight-value">2–5s</span>
@@ -164,8 +170,6 @@ function StartDashboard({
           <p>Use the command palette for servers, panels, tabs, runbooks and workspace actions.</p>
           <div className="shortcut-row">
             <kbd>Ctrl</kbd><kbd>K</kbd>
-            <span>or</span>
-            <kbd>⌘</kbd><kbd>K</kbd>
           </div>
         </div>
 

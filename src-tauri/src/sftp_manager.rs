@@ -29,7 +29,10 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
             continue;
         }
         // perms links owner group size epoch name...
-        let cols: Vec<&str> = line.splitn(7, char::is_whitespace).filter(|s| !s.is_empty()).collect();
+        let cols: Vec<&str> = line
+            .splitn(7, char::is_whitespace)
+            .filter(|s| !s.is_empty())
+            .collect();
         if cols.len() < 7 {
             continue;
         }
@@ -45,7 +48,11 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
             name,
         });
     }
-    files.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    files.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     Ok(files)
 }
 
@@ -78,15 +85,21 @@ fn scp_base(server: &Server) -> (String, Vec<String>) {
 pub fn upload(server: &Server, local_path: &str, remote_dir: &str) -> Result<()> {
     let (program, mut args) = scp_base(server);
     args.push(local_path.to_string());
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_dir));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_dir
+    ));
     run_transfer(server, &program, &args)
 }
 
 /// Download a remote file to a local directory.
-pub fn download(server: &Server, remote_path: &str, local_dir: &str) -> Result<()> {
+pub fn download(server: &Server, remote_path: &str, local_path: &str) -> Result<()> {
     let (program, mut args) = scp_base(server);
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_path));
-    args.push(local_dir.to_string());
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_path
+    ));
+    args.push(local_path.to_string());
     run_transfer(server, &program, &args)
 }
 
@@ -100,7 +113,10 @@ pub fn delete(server: &Server, remote_path: &str) -> Result<()> {
 }
 
 pub fn rename(server: &Server, from: &str, to: &str) -> Result<()> {
-    let out = ssh_manager::run_remote(server, &format!("mv {} {}", shell_quote(from), shell_quote(to)))?;
+    let out = ssh_manager::run_remote(
+        server,
+        &format!("mv {} {}", shell_quote(from), shell_quote(to)),
+    )?;
     if out.success {
         Ok(())
     } else {
@@ -112,7 +128,9 @@ fn run_transfer(server: &Server, program: &str, args: &[String]) -> Result<()> {
     let mut cmd = Command::new(program);
     cmd.args(args);
     ssh_manager::apply_password_env(&mut cmd, server);
-    let out = cmd.output().map_err(|e| anyhow!("failed to run {program}: {e}"))?;
+    let out = cmd
+        .output()
+        .map_err(|e| anyhow!("failed to run {program}: {e}"))?;
     if out.status.success() {
         Ok(())
     } else {

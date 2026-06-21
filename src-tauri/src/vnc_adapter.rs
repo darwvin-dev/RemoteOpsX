@@ -18,14 +18,15 @@ pub struct VncOptions {
 
 /// Candidate VNC viewer binaries, in preference order.
 fn vnc_bin() -> Option<&'static str> {
-    for bin in ["vncviewer", "vinagre", "remmina", "gvncviewer", "xtigervncviewer"] {
-        // `command -v` style probe: spawning with no args is unreliable, so we
-        // check existence via `which`-equivalent (try to spawn --help).
-        if Command::new(bin).arg("--help").output().is_ok() {
-            return Some(bin);
-        }
-    }
-    None
+    [
+        "vncviewer",
+        "vinagre",
+        "remmina",
+        "gvncviewer",
+        "xtigervncviewer",
+    ]
+    .into_iter()
+    .find(|bin| Command::new(bin).arg("--help").output().is_ok())
 }
 
 /// Launch an external VNC viewer for the given server.
@@ -34,8 +35,7 @@ pub fn launch(server: &Server, opts: &VncOptions) -> Result<()> {
         anyhow!("No VNC viewer found. Install one (e.g. `pacman -S tigervnc` / `apt install tigervnc-viewer`).")
     })?;
 
-    let port = if server.port == 22 { 5900 } else { server.port };
-    let target = format!("{}:{}", server.host, port);
+    let target = format!("{}:{}", server.host, server.vnc_port());
 
     let mut cmd = Command::new(bin);
     match bin {
@@ -54,6 +54,7 @@ pub fn launch(server: &Server, opts: &VncOptions) -> Result<()> {
         }
     }
 
-    cmd.spawn().map_err(|e| anyhow!("failed to launch {bin}: {e}"))?;
+    cmd.spawn()
+        .map_err(|e| anyhow!("failed to launch {bin}: {e}"))?;
     Ok(())
 }

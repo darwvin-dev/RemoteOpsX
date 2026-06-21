@@ -19,9 +19,10 @@ interface PaletteAction {
   run: () => void;
 }
 
-const SERVER_ACTIONS: { kind: TabKind; label: string; requiresProtocol?: "ssh" | "sftp" | "rdp" | "vnc" }[] = [
+const SERVER_ACTIONS: { kind: TabKind; label: string; requiresProtocol?: "ssh" | "sftp" | "ftp" | "rdp" | "vnc" }[] = [
   { kind: "ssh", label: "Open SSH", requiresProtocol: "ssh" },
   { kind: "sftp", label: "Open SFTP", requiresProtocol: "sftp" },
+  { kind: "ftp", label: "Open FTP", requiresProtocol: "ftp" },
   { kind: "logs", label: "Open Logs" },
   { kind: "rdp", label: "Launch RDP", requiresProtocol: "rdp" },
   { kind: "vnc", label: "Launch VNC", requiresProtocol: "vnc" },
@@ -99,12 +100,12 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
       },
     ];
 
-    const panelActions: PaletteAction[] = (["health", "services", "docker", "notes", "snippets"] as RightPanelView[]).map((view) => ({
+    const panelActions: PaletteAction[] = (["health", "services", "notes", "snippets"] as RightPanelView[]).map((view) => ({
       id: `panel-${view}`,
       title: `Focus ${view} panel`,
       eyebrow: "Right panel",
       detail: "Switch the operations side panel",
-      keywords: `${view} right panel metrics services docker notes snippets`,
+      keywords: `${view} right panel metrics services notes snippets`,
       run: closeThen(() => setRightPanel(view)),
     }));
 
@@ -263,11 +264,12 @@ function serverKeywords(server: Server): string {
 function iconFor(action: PaletteAction): string {
   if (action.id.startsWith("ssh-")) return "▰";
   if (action.id.startsWith("sftp-")) return "⇅";
+  if (action.id.startsWith("ftp-")) return "⇅";
   if (action.id.startsWith("rdp-") || action.id.startsWith("vnc-")) return "▣";
   if (action.id.startsWith("focus-")) return "◉";
   if (action.id.startsWith("panel-")) return "◧";
   if (action.id.startsWith("tab-")) return "▱";
   if (action.id === "runbooks") return "▶";
   if (action.id === "tunnels") return "⇄";
-  return "⌘";
+  return "⌁";
 }

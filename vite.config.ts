@@ -30,5 +30,16 @@ export default defineConfig({
     target: "es2021",
     minify: process.env.TAURI_ENV_DEBUG ? false : "esbuild",
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/@xterm/")) return "xterm";
+          if (id.includes("node_modules/@tauri-apps/")) return "tauri";
+          if (id.includes("node_modules/react") || id.includes("node_modules/scheduler")) return "react";
+          if (id.includes("node_modules/zustand")) return "state";
+          return undefined;
+        },
+      },
+    },
   },
 });

@@ -14,6 +14,32 @@ use anyhow::{anyhow, Result};
 use crate::models::{Server, Tunnel};
 use crate::ssh_manager;
 
+fn validate_tunnel(tunnel: &Tunnel) -> Result<()> {
+    if tunnel.id.trim().is_empty() {
+        return Err(anyhow!("tunnel id is required"));
+    }
+    if tunnel.local_port == 0 {
+        return Err(anyhow!("local port must be between 1 and 65535"));
+    }
+    match tunnel.r#type.as_str() {
+        "dynamic" => Ok(()),
+        "local" | "remote" => {
+            if tunnel
+                .remote_host
+                .as_deref()
+                .map_or(true, |host| host.trim().is_empty())
+            {
+                return Err(anyhow!("remote host is required"));
+            }
+            if tunnel.remote_port.map_or(true, |port| port == 0) {
+                return Err(anyhow!("remote port must be between 1 and 65535"));
+            }
+            Ok(())
+        }
+        other => Err(anyhow!("unknown tunnel type: {other}")),
+    }
+}
+
 #[derive(Default)]
 pub struct TunnelManager {
     procs: Mutex<HashMap<String, Child>>,
@@ -27,6 +53,7 @@ impl TunnelManager {
     /// Start a tunnel described by `tunnel` against `server`. The tunnel id is
     /// used as the registry key.
     pub fn start(&self, server: &Server, tunnel: &Tunnel) -> Result<()> {
+        validate_tunnel(tunnel)?;
         let mut args: Vec<String> = vec![
             "-N".into(),
             "-o".into(),
@@ -49,19 +76,38 @@ impl TunnelManager {
             }
         }
 
-        let local_host = tunnel.local_host.clone().unwrap_or_else(|| "127.0.0.1".into());
+        let local_host = tunnel
+            .local_host
+            .clone()
+            .unwrap_or_else(|| "127.0.0.1".into());
         match tunnel.r#type.as_str() {
             "local" => {
-                let rh = tunnel.remote_host.clone().unwrap_or_else(|| "127.0.0.1".into());
-                let rp = tunnel.remote_port.ok_or_else(|| anyhow!("remote_port required for local forward"))?;
+                let rh = tunnel
+                    .remote_host
+                    .clone()
+                    .unwrap_or_else(|| "127.0.0.1".into());
+                let rp = tunnel
+                    .remote_port
+                    .ok_or_else(|| anyhow!("remote_port required for local forward"))?;
                 args.push("-L".into());
-                args.push(format!("{}:{}:{}:{}", local_host, tunnel.local_port, rh, rp));
+                args.push(format!(
+                    "{}:{}:{}:{}",
+                    local_host, tunnel.local_port, rh, rp
+                ));
             }
             "remote" => {
-                let rh = tunnel.remote_host.clone().unwrap_or_else(|| "127.0.0.1".into());
-                let rp = tunnel.remote_port.ok_or_else(|| anyhow!("remote_port required for remote forward"))?;
+                let rh = tunnel
+                    .remote_host
+                    .clone()
+                    .unwrap_or_else(|| "127.0.0.1".into());
+                let rp = tunnel
+                    .remote_port
+                    .ok_or_else(|| anyhow!("remote_port required for remote forward"))?;
                 args.push("-R".into());
-                args.push(format!("{}:{}:{}:{}", local_host, tunnel.local_port, rh, rp));
+                args.push(format!(
+                    "{}:{}:{}:{}",
+                    local_host, tunnel.local_port, rh, rp
+                ));
             }
             "dynamic" => {
                 args.push("-D".into());
@@ -85,7 +131,15 @@ impl TunnelManager {
         cmd.args(&full_args);
         ssh_manager::apply_password_env(&mut cmd, server);
 
-        let child = cmd.spawn().map_err(|e| anyhow!("failed to start tunnel: {e}"))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| anyhow!("failed to start tunnel: {e}"))?;
+        for _ in 0..4 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if let Some(status) = child.try_wait()? {
+                return Err(anyhow!("SSH tunnel exited during startup with {status}"));
+            }
+        }
         self.procs.lock().unwrap().insert(tunnel.id.clone(), child);
         Ok(())
     }
@@ -113,5 +167,47 @@ impl TunnelManager {
             guard.remove(&id);
         }
         alive
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tunnel(kind: &str) -> Tunnel {
+        Tunnel {
+            id: "tunnel-1".into(),
+            server_id: "server-1".into(),
+            r#type: kind.into(),
+            local_host: Some("127.0.0.1".into()),
+            local_port: 8080,
+            remote_host: Some("127.0.0.1".into()),
+            remote_port: Some(80),
+            status: "pending".into(),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_tunnel_parameters() {
+        let mut value = tunnel("local");
+        value.local_port = 0;
+        assert!(validate_tunnel(&value).is_err());
+        value.local_port = 8080;
+        value.remote_port = None;
+        assert!(validate_tunnel(&value).is_err());
+        value.remote_port = Some(80);
+        value.r#type = "invalid".into();
+        assert!(validate_tunnel(&value).is_err());
+    }
+
+    #[test]
+    fn accepts_supported_tunnel_shapes() {
+        assert!(validate_tunnel(&tunnel("local")).is_ok());
+        assert!(validate_tunnel(&tunnel("remote")).is_ok());
+        let mut dynamic = tunnel("dynamic");
+        dynamic.remote_host = None;
+        dynamic.remote_port = None;
+        assert!(validate_tunnel(&dynamic).is_ok());
     }
 }
