@@ -3,6 +3,7 @@
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { normalizeRemoteError } from "./errors";
+import { validateSettings } from "./settings";
 import type { AppSettings } from "./settings";
 import type {
   CommandOutput,
@@ -28,8 +29,10 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 
 // ---- Settings ----
 export const settingsGet = () => invoke<AppSettings>("settings_get");
-export const settingsSave = (settings: AppSettings) =>
-  invoke<AppSettings>("settings_save", { settings });
+export const settingsSave = async (settings: AppSettings) => {
+  validateSettings(settings);
+  return invoke<AppSettings>("settings_save", { settings });
+};
 
 // ---- Servers ----
 export const serversList = () => invoke<Server[]>("servers_list");

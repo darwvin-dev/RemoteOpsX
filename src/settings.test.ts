@@ -4,9 +4,10 @@ const { rawInvoke } = vi.hoisted(() => ({ rawInvoke: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: rawInvoke }));
 
-import { settingsGet } from "./api";
+import { settingsGet, settingsSave } from "./api";
 import { RemoteOpsError, normalizeRemoteError } from "./errors";
 import { DEFAULT_SETTINGS, patchSettings } from "./settings";
+import type { AppSettings } from "./settings";
 
 describe("settings contracts", () => {
   beforeEach(() => {
@@ -37,6 +38,46 @@ describe("settings contracts", () => {
     expect(result).not.toBe(current);
     expect(result.default_ports).not.toBe(current.default_ports);
     expect(DEFAULT_SETTINGS.default_ports.ssh).toBe(22);
+  });
+
+  it.each([
+    ["schema_version", (settings: AppSettings): void => { settings.schema_version = 2; }],
+    ["theme", (settings: AppSettings): void => { (settings as { theme: string }).theme = "blue"; }],
+    [
+      "transfer_conflict_policy",
+      (settings: AppSettings): void => {
+        (settings as { transfer_conflict_policy: string }).transfer_conflict_policy = "replace";
+      },
+    ],
+    ["default_ports.ssh", (settings: AppSettings): void => { settings.default_ports.ssh = 65_536; }],
+    ["default_ports.ftp", (settings: AppSettings): void => { settings.default_ports.ftp = Number.NaN; }],
+    ["default_ports.rdp", (settings: AppSettings): void => { settings.default_ports.rdp = 3389.5; }],
+    [
+      "health_refresh_interval_ms",
+      (settings: AppSettings): void => { settings.health_refresh_interval_ms = 999; },
+    ],
+    ["history_retention_days", (settings: AppSettings): void => { settings.history_retention_days = 3651; }],
+    ["app_lock_timeout_minutes", (settings: AppSettings): void => { settings.app_lock_timeout_minutes = 0; }],
+    [
+      "desktop_clipboard_enabled",
+      (settings: AppSettings): void => {
+        (settings as unknown as { desktop_clipboard_enabled: string }).desktop_clipboard_enabled = "yes";
+      },
+    ],
+  ] as const)("rejects invalid %s before invoking Tauri", async (field, mutate) => {
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      default_ports: { ...DEFAULT_SETTINGS.default_ports },
+    };
+    mutate(settings);
+
+    await expect(settingsSave(settings)).rejects.toMatchObject({
+      code: "validation.invalid_value",
+      retryable: false,
+      correlationId: null,
+      context: { field },
+    });
+    expect(rawInvoke).not.toHaveBeenCalled();
   });
 
   it("normalizes structured invoke rejections without losing transport metadata", () => {
@@ -123,4 +164,13 @@ describe("settings contracts", () => {
       expect(error.correlationId).toBeNull();
     },
   );
+
+  it("defensively freezes error context", () => {
+    const context = { field: "theme" };
+    const error = new RemoteOpsError("invalid", "validation.invalid_value", false, null, context);
+    context.field = "changed";
+
+    expect(error.context).toEqual({ field: "theme" });
+    expect(Object.isFrozen(error.context)).toBe(true);
+  });
 });

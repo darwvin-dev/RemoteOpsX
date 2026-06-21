@@ -79,7 +79,6 @@ fn settings_save(
     state: State<AppState>,
     settings: settings::AppSettings,
 ) -> CommandResult<settings::AppSettings> {
-    settings.validate()?;
     let conn = state
         .db
         .lock()

@@ -18,7 +18,7 @@ export class RemoteOpsError extends Error {
     this.code = code;
     this.retryable = retryable;
     this.correlationId = correlationId;
-    this.context = context;
+    this.context = Object.freeze({ ...context });
   }
 }
 
