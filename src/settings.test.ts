@@ -75,7 +75,12 @@ describe("settings contracts", () => {
   it("maps native errors to client.error", () => {
     const error = normalizeRemoteError(new Error("offline"));
 
-    expect(error).toMatchObject({ message: "offline", code: "client.error", retryable: false });
+    expect(error).toMatchObject({
+      message: "offline",
+      code: "client.error",
+      retryable: false,
+      correlationId: null,
+    });
   });
 
   it.each([{}, { message: 42 }, 7, true, null, undefined])(
@@ -84,6 +89,7 @@ describe("settings contracts", () => {
       const error = normalizeRemoteError(rejection);
 
       expect(error.code).toBe("client.unknown");
+      expect(error.correlationId).toBeNull();
       expect(error.message).not.toContain("[object Object]");
     },
   );
@@ -98,6 +104,23 @@ describe("settings contracts", () => {
     });
 
     expect(error.code).toBe("client.unknown");
+    expect(error.correlationId).toBeNull();
     expect(error.message).not.toContain("[object Object]");
   });
+
+  it.each([{}, { correlation_id: "" }])(
+    "rejects malformed correlation metadata %j with a null fallback",
+    (correlation) => {
+      const error = normalizeRemoteError({
+        message: "bad payload",
+        code: "remote.bad",
+        retryable: false,
+        context: {},
+        ...correlation,
+      });
+
+      expect(error.code).toBe("client.unknown");
+      expect(error.correlationId).toBeNull();
+    },
+  );
 });

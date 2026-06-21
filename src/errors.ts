@@ -3,14 +3,14 @@ export type RemoteErrorContext = Readonly<Record<string, string>>;
 export class RemoteOpsError extends Error {
   readonly code: string;
   readonly retryable: boolean;
-  readonly correlationId: string;
+  readonly correlationId: string | null;
   readonly context: RemoteErrorContext;
 
   constructor(
     message: string,
     code: string,
     retryable: boolean,
-    correlationId: string,
+    correlationId: string | null,
     context: RemoteErrorContext = {},
   ) {
     super(message);
@@ -34,7 +34,7 @@ export function normalizeRemoteError(error: unknown): RemoteOpsError {
   if (error instanceof RemoteOpsError) return error;
 
   if (error instanceof Error) {
-    return new RemoteOpsError(error.message, "client.error", false, "");
+    return new RemoteOpsError(error.message, "client.error", false, null);
   }
 
   if (
@@ -43,6 +43,7 @@ export function normalizeRemoteError(error: unknown): RemoteOpsError {
     typeof error.code === "string" &&
     typeof error.retryable === "boolean" &&
     typeof error.correlation_id === "string" &&
+    error.correlation_id.length > 0 &&
     isContext(error.context)
   ) {
     return new RemoteOpsError(
@@ -54,5 +55,5 @@ export function normalizeRemoteError(error: unknown): RemoteOpsError {
     );
   }
 
-  return new RemoteOpsError("An unknown client error occurred.", "client.unknown", false, "");
+  return new RemoteOpsError("An unknown client error occurred.", "client.unknown", false, null);
 }
