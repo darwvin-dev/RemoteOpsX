@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useSettingsStore } from "../settingsStore";
 import type { DefaultPorts, SettingsPatch, Theme, TransferConflictPolicy } from "../settings";
 
@@ -25,18 +25,23 @@ export function SettingsModal({ onClose }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
 
-  function requestClose() {
+  const requestClose = useCallback(() => {
     if (dirty && !window.confirm("Discard your unsaved settings changes?")) return;
     if (dirty) reset();
     onClose();
-  }
+  }, [dirty, onClose, reset]);
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
 
   useEffect(() => {
     titleRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        requestClose();
+        requestCloseRef.current();
         return;
       }
       if (event.key === "Tab") {
@@ -57,8 +62,7 @@ export function SettingsModal({ onClose }: Props) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  // requestClose intentionally reads the current render's state.
-  }, [dirty]);
+  }, []);
 
   const patchNumber = (field: keyof Pick<typeof settings, "health_refresh_interval_ms" | "history_retention_days" | "app_lock_timeout_minutes">, value: string, multiplier = 1) => {
     patch({ [field]: Number(value) * multiplier } as SettingsPatch);
