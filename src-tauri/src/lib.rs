@@ -1,12 +1,12 @@
 //! RemoteOpsX backend entry point.
 //!
 //! Wires the module managers into Tauri's managed `AppState` and exposes the
-//! command surface consumed by the React frontend. Each command translates
-//! `anyhow` errors into strings so they surface cleanly in the UI.
+//! command surface consumed by the React frontend.
 
 // Modules are `pub` so integration tests (in `tests/`) can drive the remote-ops
 // layer (ssh exec, health collection, runbook execution) against a real host.
 pub mod database;
+pub mod error;
 pub mod ftp_manager;
 pub mod health_collector;
 pub mod models;
@@ -24,6 +24,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 use tauri::{AppHandle, Manager, State};
 
+use error::{CommandResult, DomainError};
 use health_collector::HealthSnapshot;
 use models::*;
 use pty_manager::PtyManager;
@@ -37,13 +38,13 @@ pub struct AppState {
     tunnels: TunnelManager,
 }
 
-/// Convert any error into a string for transport to the frontend.
-fn e<T, E: std::fmt::Display>(r: Result<T, E>) -> Result<T, String> {
-    r.map_err(|err| err.to_string())
+/// Convert an operational error into the safe transport contract.
+fn e<T, E: std::fmt::Display>(r: Result<T, E>) -> CommandResult<T> {
+    r.map_err(DomainError::internal)
 }
 
 /// Load a server profile by id.
-fn load_server(state: &State<AppState>, id: &str) -> Result<Server, String> {
+fn load_server(state: &State<AppState>, id: &str) -> CommandResult<Server> {
     let conn = state.db.lock().unwrap();
     e(database::get_server(&conn, id))
 }
@@ -51,21 +52,22 @@ fn load_server(state: &State<AppState>, id: &str) -> Result<Server, String> {
 // =================== Server Manager ===================
 
 #[tauri::command]
-fn servers_list(state: State<AppState>) -> Result<Vec<Server>, String> {
+fn servers_list(state: State<AppState>) -> CommandResult<Vec<Server>> {
     let conn = state.db.lock().unwrap();
     e(database::list_servers(&conn))
 }
 
 #[tauri::command]
-fn server_get(state: State<AppState>, id: String) -> Result<Server, String> {
+fn server_get(state: State<AppState>, id: String) -> CommandResult<Server> {
     load_server(&state, &id)
 }
 
 /// Create or update a profile. The transient `secret` is written to the OS
 /// keyring (never SQLite); only a reference is recorded.
 #[tauri::command]
-fn server_save(state: State<AppState>, mut input: ServerInput) -> Result<String, String> {
-    e(database::validate_server_input(&input))?;
+fn server_save(state: State<AppState>, mut input: ServerInput) -> CommandResult<String> {
+    database::validate_server_input(&input)
+        .map_err(|err| DomainError::validation("server", err.to_string()))?;
     if input.id.is_none() {
         input.id = Some(uuid::Uuid::new_v4().to_string());
     }
@@ -83,7 +85,10 @@ fn server_save(state: State<AppState>, mut input: ServerInput) -> Result<String,
     let supplied = input.secret.as_deref().filter(|secret| !secret.is_empty());
     let previous = e(vault::get_secret(&sref))?;
     if supplied.is_none() && previous.is_none() {
-        return Err("a password is required for password authentication".into());
+        return Err(DomainError::validation(
+            "secret",
+            "a password is required for password authentication",
+        ));
     }
     if let Some(secret) = supplied {
         e(vault::set_secret(&sref, secret))?;
@@ -106,13 +111,13 @@ fn server_save(state: State<AppState>, mut input: ServerInput) -> Result<String,
                     }
                 }
             }
-            Err(err.to_string())
+            Err(DomainError::internal(err))
         }
     }
 }
 
 #[tauri::command]
-fn server_delete(state: State<AppState>, id: String) -> Result<(), String> {
+fn server_delete(state: State<AppState>, id: String) -> CommandResult<()> {
     // Best-effort secret cleanup; ignore missing keyring entries.
     let _ = vault::delete_secret(&vault::secret_ref(&id));
     state.health.forget(&id);
@@ -130,7 +135,7 @@ fn pty_spawn(
     server_id: String,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(state
         .pty
@@ -142,7 +147,7 @@ fn pty_spawn(
 }
 
 #[tauri::command]
-fn pty_write(state: State<AppState>, session_id: String, data: Vec<u8>) -> Result<(), String> {
+fn pty_write(state: State<AppState>, session_id: String, data: Vec<u8>) -> CommandResult<()> {
     e(state.pty.write(&session_id, &data))
 }
 
@@ -152,12 +157,12 @@ fn pty_resize(
     session_id: String,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     e(state.pty.resize(&session_id, cols, rows))
 }
 
 #[tauri::command]
-fn pty_close(state: State<AppState>, session_id: String) -> Result<(), String> {
+fn pty_close(state: State<AppState>, session_id: String) -> CommandResult<()> {
     e(state.pty.close(&session_id))?;
     let conn = state.db.lock().unwrap();
     let _ = database::close_session(&conn, &session_id);
@@ -167,7 +172,7 @@ fn pty_close(state: State<AppState>, session_id: String) -> Result<(), String> {
 // =================== Live Health ===================
 
 #[tauri::command]
-fn health_collect(state: State<AppState>, server_id: String) -> Result<HealthSnapshot, String> {
+fn health_collect(state: State<AppState>, server_id: String) -> CommandResult<HealthSnapshot> {
     let server = load_server(&state, &server_id)?;
     e(state.health.collect(&server))
 }
@@ -179,7 +184,7 @@ fn run_remote(
     state: State<AppState>,
     server_id: String,
     command: String,
-) -> Result<CommandOutput, String> {
+) -> CommandResult<CommandOutput> {
     let server = load_server(&state, &server_id)?;
     e(ssh_manager::run_remote(&server, &command))
 }
@@ -187,20 +192,20 @@ fn run_remote(
 // =================== Runbooks ===================
 
 #[tauri::command]
-fn runbooks_list(state: State<AppState>) -> Result<Vec<Runbook>, String> {
+fn runbooks_list(state: State<AppState>) -> CommandResult<Vec<Runbook>> {
     let conn = state.db.lock().unwrap();
     e(database::list_runbooks(&conn))
 }
 
 #[tauri::command]
-fn runbook_get(state: State<AppState>, id: String) -> Result<Runbook, String> {
+fn runbook_get(state: State<AppState>, id: String) -> CommandResult<Runbook> {
     let conn = state.db.lock().unwrap();
     e(database::get_runbook(&conn, &id))
 }
 
 /// Parse a runbook's YAML into its executable spec (for the pre-run preview).
 #[tauri::command]
-fn runbook_spec(state: State<AppState>, id: String) -> Result<RunbookSpec, String> {
+fn runbook_spec(state: State<AppState>, id: String) -> CommandResult<RunbookSpec> {
     let rb = {
         let conn = state.db.lock().unwrap();
         e(database::get_runbook(&conn, &id))?
@@ -215,9 +220,10 @@ fn runbook_save(
     name: String,
     description: String,
     content_yaml: String,
-) -> Result<String, String> {
+) -> CommandResult<String> {
     // Validate YAML before saving.
-    e(runbook_runner::parse(&content_yaml))?;
+    runbook_runner::parse(&content_yaml)
+        .map_err(|err| DomainError::validation("content_yaml", err.to_string()))?;
     let conn = state.db.lock().unwrap();
     e(database::save_runbook(
         &conn,
@@ -235,7 +241,7 @@ fn runbook_run_step(
     state: State<AppState>,
     server_id: String,
     step: RunbookStep,
-) -> Result<StepResult, String> {
+) -> CommandResult<StepResult> {
     let server = load_server(&state, &server_id)?;
     Ok(runbook_runner::run_step(&server, &step))
 }
@@ -249,7 +255,7 @@ fn runbook_record_run(
     started_at: String,
     status: String,
     results: Vec<StepResult>,
-) -> Result<String, String> {
+) -> CommandResult<String> {
     let run = RunbookRun {
         id: uuid::Uuid::new_v4().to_string(),
         runbook_id,
@@ -267,10 +273,7 @@ fn runbook_record_run(
 }
 
 #[tauri::command]
-fn runbook_runs_list(
-    state: State<AppState>,
-    limit: Option<i64>,
-) -> Result<Vec<RunbookRun>, String> {
+fn runbook_runs_list(state: State<AppState>, limit: Option<i64>) -> CommandResult<Vec<RunbookRun>> {
     let conn = state.db.lock().unwrap();
     e(database::list_runbook_runs(&conn, limit.unwrap_or(50)))
 }
@@ -283,7 +286,7 @@ fn service_action(
     server_id: String,
     action: String,
     unit: String,
-) -> Result<CommandOutput, String> {
+) -> CommandResult<CommandOutput> {
     let server = load_server(&state, &server_id)?;
     let unit_q = shell_quote(&unit);
     let cmd = match action.as_str() {
@@ -293,7 +296,12 @@ fn service_action(
         "stop" => format!("sudo systemctl stop {unit_q}"),
         "restart" => format!("sudo systemctl restart {unit_q}"),
         "list-failed" => "systemctl --failed --no-pager --plain --no-legend".to_string(),
-        other => return Err(format!("unknown service action: {other}")),
+        other => {
+            return Err(DomainError::validation(
+                "action",
+                format!("unknown service action: {other}"),
+            ))
+        }
     };
     e(ssh_manager::run_remote(&server, &cmd))
 }
@@ -305,7 +313,7 @@ fn sftp_list(
     state: State<AppState>,
     server_id: String,
     path: String,
-) -> Result<Vec<RemoteFile>, String> {
+) -> CommandResult<Vec<RemoteFile>> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::list_dir(&server, &path))
 }
@@ -316,7 +324,7 @@ fn sftp_upload(
     server_id: String,
     local_path: String,
     remote_dir: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::upload(&server, &local_path, &remote_dir))
 }
@@ -327,7 +335,7 @@ fn sftp_download(
     server_id: String,
     remote_path: String,
     local_path: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::download(&server, &remote_path, &local_path))
 }
@@ -337,7 +345,7 @@ fn sftp_delete(
     state: State<AppState>,
     server_id: String,
     remote_path: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::delete(&server, &remote_path))
 }
@@ -348,7 +356,7 @@ fn sftp_rename(
     server_id: String,
     from: String,
     to: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(sftp_manager::rename(&server, &from, &to))
 }
@@ -360,7 +368,7 @@ fn ftp_list(
     state: State<AppState>,
     server_id: String,
     path: String,
-) -> Result<Vec<RemoteFile>, String> {
+) -> CommandResult<Vec<RemoteFile>> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::list_dir(&server, &path))
 }
@@ -371,7 +379,7 @@ fn ftp_upload(
     server_id: String,
     local_path: String,
     remote_dir: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::upload(&server, &local_path, &remote_dir))
 }
@@ -382,17 +390,13 @@ fn ftp_download(
     server_id: String,
     remote_path: String,
     local_path: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::download(&server, &remote_path, &local_path))
 }
 
 #[tauri::command]
-fn ftp_delete(
-    state: State<AppState>,
-    server_id: String,
-    remote_path: String,
-) -> Result<(), String> {
+fn ftp_delete(state: State<AppState>, server_id: String, remote_path: String) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::delete(&server, &remote_path))
 }
@@ -403,7 +407,7 @@ fn ftp_rename(
     server_id: String,
     from: String,
     to: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(ftp_manager::rename(&server, &from, &to))
 }
@@ -415,7 +419,7 @@ fn rdp_launch(
     state: State<AppState>,
     server_id: String,
     options: rdp_adapter::RdpOptions,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(rdp_adapter::launch(&server, &options))
 }
@@ -425,7 +429,7 @@ fn vnc_launch(
     state: State<AppState>,
     server_id: String,
     options: vnc_adapter::VncOptions,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let server = load_server(&state, &server_id)?;
     e(vnc_adapter::launch(&server, &options))
 }
@@ -433,7 +437,7 @@ fn vnc_launch(
 // =================== Tunnels ===================
 
 #[tauri::command]
-fn tunnel_start(state: State<AppState>, tunnel: Tunnel) -> Result<Tunnel, String> {
+fn tunnel_start(state: State<AppState>, tunnel: Tunnel) -> CommandResult<Tunnel> {
     let server = load_server(&state, &tunnel.server_id)?;
     let mut t = tunnel;
     if t.id.is_empty() {
@@ -449,14 +453,14 @@ fn tunnel_start(state: State<AppState>, tunnel: Tunnel) -> Result<Tunnel, String
 }
 
 #[tauri::command]
-fn tunnel_stop(state: State<AppState>, id: String) -> Result<(), String> {
+fn tunnel_stop(state: State<AppState>, id: String) -> CommandResult<()> {
     e(state.tunnels.stop(&id))?;
     let conn = state.db.lock().unwrap();
     e(database::set_tunnel_status(&conn, &id, "stopped"))
 }
 
 #[tauri::command]
-fn tunnels_list(state: State<AppState>) -> Result<Vec<Tunnel>, String> {
+fn tunnels_list(state: State<AppState>) -> CommandResult<Vec<Tunnel>> {
     let active = state.tunnels.active_ids();
     let conn = state.db.lock().unwrap();
     let mut tunnels = e(database::list_tunnels(&conn))?;
@@ -473,7 +477,7 @@ fn tunnels_list(state: State<AppState>) -> Result<Vec<Tunnel>, String> {
 /// Write text to a local file (used by the logs panel "save" / diagnostic
 /// bundle features). Path is user-chosen via the save dialog.
 #[tauri::command]
-fn save_text_file(path: String, content: String) -> Result<(), String> {
+fn save_text_file(path: String, content: String) -> CommandResult<()> {
     e(std::fs::write(&path, content))
 }
 
