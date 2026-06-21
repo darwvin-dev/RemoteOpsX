@@ -50,6 +50,43 @@ fn load_server(state: &State<AppState>, id: &str) -> CommandResult<Server> {
     e(database::get_server(&conn, id))
 }
 
+fn settings_get_from_db(conn: &Connection) -> CommandResult<settings::AppSettings> {
+    e(database::load_settings(conn))
+}
+
+fn settings_save_to_db(
+    conn: &Connection,
+    settings: settings::AppSettings,
+) -> CommandResult<settings::AppSettings> {
+    settings.validate()?;
+    e(database::save_settings(conn, &settings))?;
+    Ok(settings)
+}
+
+// =================== Settings ===================
+
+#[tauri::command]
+fn settings_get(state: State<AppState>) -> CommandResult<settings::AppSettings> {
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| DomainError::internal("database lock poisoned"))?;
+    settings_get_from_db(&conn)
+}
+
+#[tauri::command]
+fn settings_save(
+    state: State<AppState>,
+    settings: settings::AppSettings,
+) -> CommandResult<settings::AppSettings> {
+    settings.validate()?;
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| DomainError::internal("database lock poisoned"))?;
+    settings_save_to_db(&conn, settings)
+}
+
 // =================== Server Manager ===================
 
 #[tauri::command]
@@ -523,6 +560,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            settings_get,
+            settings_save,
             servers_list,
             server_get,
             server_save,
@@ -618,5 +657,50 @@ mod tunnel_error_tests {
 
         assert_eq!(error.code, "internal.unexpected");
         assert!(error.context.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod settings_command_tests {
+    use super::*;
+
+    fn database() -> (std::path::PathBuf, Connection) {
+        let path =
+            std::env::temp_dir().join(format!("remoteopsx-settings-{}.db", uuid::Uuid::new_v4()));
+        let conn = database::open(&path).expect("test database should open");
+        (path, conn)
+    }
+
+    #[test]
+    fn get_returns_defaults_and_save_returns_persisted_value() {
+        let (path, conn) = database();
+        let defaults = settings_get_from_db(&conn).expect("defaults should load");
+        assert_eq!(defaults, settings::AppSettings::default());
+
+        let mut changed = defaults;
+        changed.theme = settings::Theme::Dark;
+        changed.default_ports.ssh = 2222;
+        let saved = settings_save_to_db(&conn, changed.clone()).expect("settings should save");
+
+        assert_eq!(saved, changed);
+        assert_eq!(settings_get_from_db(&conn).unwrap(), changed);
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_validates_before_replacing_persisted_settings() {
+        let (path, conn) = database();
+        let original = settings::AppSettings::default();
+        settings_save_to_db(&conn, original.clone()).unwrap();
+
+        let mut invalid = original.clone();
+        invalid.default_ports.ssh = 0;
+        let error = settings_save_to_db(&conn, invalid).expect_err("invalid settings should fail");
+
+        assert_eq!(error.code, "validation.invalid_value");
+        assert_eq!(settings_get_from_db(&conn).unwrap(), original);
+        drop(conn);
+        let _ = std::fs::remove_file(path);
     }
 }

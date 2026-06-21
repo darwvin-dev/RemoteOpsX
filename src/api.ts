@@ -1,7 +1,9 @@
 // Typed wrappers around Tauri commands. One function per backend command so
 // components never touch `invoke` strings directly.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { normalizeRemoteError } from "./errors";
+import type { AppSettings } from "./settings";
 import type {
   CommandOutput,
   HealthSnapshot,
@@ -15,6 +17,19 @@ import type {
   StepResult,
   Tunnel,
 } from "./types";
+
+async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (error) {
+    throw normalizeRemoteError(error);
+  }
+}
+
+// ---- Settings ----
+export const settingsGet = () => invoke<AppSettings>("settings_get");
+export const settingsSave = (settings: AppSettings) =>
+  invoke<AppSettings>("settings_save", { settings });
 
 // ---- Servers ----
 export const serversList = () => invoke<Server[]>("servers_list");
