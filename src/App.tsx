@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useStore } from "./store";
 import type { Server } from "./types";
 import { ServerSidebar } from "./components/ServerSidebar";
@@ -29,6 +29,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const loadSettings = useSettingsStore((state) => state.load);
   const theme = useSettingsStore((state) => state.settings.theme);
+  const settingsInitialized = useSettingsStore((state) => state.initialized);
 
   function openNewServer(folder?: string) {
     setInitialFolder(folder);
@@ -45,16 +46,18 @@ export default function App() {
     void loadSettings().catch(() => undefined);
   }, [loadServers, loadSettings]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => {
       document.documentElement.dataset.theme = theme === "system" ? (media.matches ? "dark" : "light") : theme;
+      if (settingsInitialized) document.documentElement.dataset.settingsReady = "true";
+      else delete document.documentElement.dataset.settingsReady;
     };
     applyTheme();
     if (theme !== "system") return;
     media.addEventListener("change", applyTheme);
     return () => media.removeEventListener("change", applyTheme);
-  }, [theme]);
+  }, [settingsInitialized, theme]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -68,7 +71,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className={`app${rightCollapsed ? " right-collapsed" : ""}`}>
+    <div className={`app${rightCollapsed ? " right-collapsed" : ""}${settingsInitialized ? "" : " settings-pending"}`}>
       <header className="topbar">
         <div className="brand">
           <span className="logo" />

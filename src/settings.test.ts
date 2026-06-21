@@ -16,6 +16,12 @@ const darkSettings = (): AppSettings => ({
   default_ports: { ...DEFAULT_SETTINGS.default_ports },
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 describe("settings contracts", () => {
   beforeEach(() => {
     rawInvoke.mockReset();
@@ -183,6 +189,38 @@ describe("settings contracts", () => {
 });
 
 describe("settings state", () => {
+  it("rejects patch and reset while loading and deterministically commits the load", async () => {
+    const pending = deferred<AppSettings>();
+    const store = createSettingsState({ load: () => pending.promise, save: async (settings) => settings });
+
+    const load = store.getState().load();
+    expect(store.getState().loading).toBe(true);
+    expect(store.getState().patch({ theme: "light" })).toBe(false);
+    expect(store.getState().reset()).toBe(false);
+
+    pending.resolve(darkSettings());
+    await load;
+    expect(store.getState()).toMatchObject({ settings: { theme: "dark" }, persisted: { theme: "dark" }, dirty: false });
+  });
+
+  it("rejects patch and reset while saving and deterministically commits the save", async () => {
+    const pending = deferred<AppSettings>();
+    const loaded = darkSettings();
+    const saved = { ...loaded, theme: "light" as const };
+    const store = createSettingsState({ load: async () => loaded, save: () => pending.promise });
+    await store.getState().load();
+    expect(store.getState().patch({ theme: "light" })).toBe(true);
+
+    const save = store.getState().save();
+    expect(store.getState().saving).toBe(true);
+    expect(store.getState().patch({ default_ports: { ssh: 2222 } })).toBe(false);
+    expect(store.getState().reset()).toBe(false);
+
+    pending.resolve(saved);
+    await save;
+    expect(store.getState()).toMatchObject({ settings: saved, persisted: saved, dirty: false, saving: false });
+  });
+
   it("loads, patches, and saves backend-returned settings", async () => {
     const loaded = darkSettings();
     const saved = { ...loaded, theme: "light" as const };
@@ -191,8 +229,9 @@ describe("settings state", () => {
       save: async () => saved,
     });
 
+    expect(store.getState().initialized).toBe(false);
     await store.getState().load();
-    expect(store.getState()).toMatchObject({ settings: loaded, persisted: loaded, dirty: false });
+    expect(store.getState()).toMatchObject({ settings: loaded, persisted: loaded, dirty: false, initialized: true });
 
     store.getState().patch({ theme: "light" });
     expect(store.getState()).toMatchObject({ settings: saved, persisted: loaded, dirty: true });

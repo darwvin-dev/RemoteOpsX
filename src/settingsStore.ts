@@ -15,12 +15,13 @@ export interface SettingsState {
   settings: AppSettings;
   persisted: AppSettings;
   loading: boolean;
+  initialized: boolean;
   saving: boolean;
   dirty: boolean;
   error: RemoteOpsError | null;
   load: () => Promise<void>;
-  patch: (patch: SettingsPatch) => void;
-  reset: () => void;
+  patch: (patch: SettingsPatch) => boolean;
+  reset: () => boolean;
   save: () => Promise<void>;
 }
 
@@ -42,6 +43,7 @@ function settingsCreator(dependencies: SettingsDependencies) {
       settings: initial,
       persisted: cloneSettings(initial),
       loading: false,
+      initialized: false,
       saving: false,
       dirty: false,
       error: null,
@@ -53,25 +55,33 @@ function settingsCreator(dependencies: SettingsDependencies) {
           .then((settings) => {
             const persisted = cloneSettings(settings);
             loaded = true;
-            set({ settings: cloneSettings(persisted), persisted, loading: false, dirty: false });
+            set({ settings: cloneSettings(persisted), persisted, loading: false, initialized: true, dirty: false });
           })
           .catch((rejection: unknown) => {
             const error = normalizeRemoteError(rejection);
-            set({ loading: false, error });
+            set({ loading: false, initialized: true, error });
             throw error;
           })
           .finally(() => { loadPromise = null; });
         return loadPromise;
       },
-      patch: (patch) => set((state) => {
-        const settings = patchSettings(state.settings, patch);
-        return { settings, dirty: !sameSettings(settings, state.persisted), error: null };
-      }),
-      reset: () => set((state) => ({
-        settings: cloneSettings(state.persisted),
-        dirty: false,
-        error: null,
-      })),
+      patch: (patch) => {
+        if (get().loading || get().saving) return false;
+        set((state) => {
+          const settings = patchSettings(state.settings, patch);
+          return { settings, dirty: !sameSettings(settings, state.persisted), error: null };
+        });
+        return true;
+      },
+      reset: () => {
+        if (get().loading || get().saving) return false;
+        set((state) => ({
+          settings: cloneSettings(state.persisted),
+          dirty: false,
+          error: null,
+        }));
+        return true;
+      },
       save: () => {
         if (savePromise) return savePromise;
         const state = get();
