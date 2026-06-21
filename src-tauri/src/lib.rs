@@ -13,6 +13,7 @@ pub mod models;
 pub mod pty_manager;
 pub mod rdp_adapter;
 pub mod runbook_runner;
+pub mod settings;
 pub mod sftp_manager;
 pub mod ssh_manager;
 pub mod tunnel_manager;

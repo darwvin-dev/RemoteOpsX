@@ -8,6 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection};
 
 use crate::models::*;
+use crate::settings::AppSettings;
 
 /// Open (creating if needed) the SQLite database and run migrations.
 pub fn open(path: &std::path::Path) -> Result<Connection> {
@@ -93,6 +94,13 @@ fn migrate(conn: &Connection) -> Result<()> {
             status      TEXT NOT NULL,
             created_at  TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+            schema_version INTEGER NOT NULL,
+            value_json TEXT NOT NULL CHECK (length(value_json) <= 65536),
+            updated_at TEXT NOT NULL
+        );
         "#,
     )
     .context("failed to run migrations")?;
@@ -124,6 +132,44 @@ fn add_column_if_missing(
 
 fn now() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+pub fn load_settings(conn: &Connection) -> Result<AppSettings> {
+    let result = conn.query_row(
+        "SELECT value_json FROM app_settings WHERE singleton_id = 1",
+        [],
+        |row| row.get::<_, String>(0),
+    );
+    let value_json = match result {
+        Ok(value) => value,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(AppSettings::default()),
+        Err(error) => return Err(error.into()),
+    };
+    let settings: AppSettings =
+        serde_json::from_str(&value_json).context("failed to deserialize application settings")?;
+    settings
+        .validate()
+        .map_err(|error| anyhow!("invalid persisted setting: {}", error.message))?;
+    Ok(settings)
+}
+
+pub fn save_settings(conn: &Connection, settings: &AppSettings) -> Result<()> {
+    settings
+        .validate()
+        .map_err(|error| anyhow!("invalid setting: {}", error.message))?;
+    let value_json = serde_json::to_string(settings)?;
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+         VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(singleton_id) DO UPDATE SET
+             schema_version=excluded.schema_version,
+             value_json=excluded.value_json,
+             updated_at=excluded.updated_at",
+        params![settings.schema_version, value_json, now()],
+    )?;
+    transaction.commit()?;
+    Ok(())
 }
 
 fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
@@ -525,6 +571,7 @@ pub fn list_tunnels(conn: &Connection) -> Result<Vec<Tunnel>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{AppSettings, Theme};
 
     fn input(auth_type: &str) -> ServerInput {
         ServerInput {
@@ -630,6 +677,41 @@ mod tests {
                 [],
                 |row| row.get(0),
             )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn empty_migrated_database_loads_default_settings() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(load_settings(&conn).unwrap(), AppSettings::default());
+    }
+
+    #[test]
+    fn settings_save_reload_and_replace_singleton_atomically() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let first = AppSettings {
+            theme: Theme::Light,
+            health_refresh_interval_ms: 5000,
+            ..AppSettings::default()
+        };
+        save_settings(&mut conn, &first).unwrap();
+        assert_eq!(load_settings(&conn).unwrap(), first);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let second = AppSettings {
+            theme: Theme::Dark,
+            ..AppSettings::default()
+        };
+        save_settings(&mut conn, &second).unwrap();
+        assert_eq!(load_settings(&conn).unwrap(), second);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
     }
