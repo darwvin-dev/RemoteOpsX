@@ -188,4 +188,39 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn validation_accepts_inclusive_numeric_boundaries() {
+        for value in [1000, 60_000] {
+            let settings = AppSettings {
+                health_refresh_interval_ms: value,
+                ..AppSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+        for value in [1, 3650] {
+            let settings = AppSettings {
+                history_retention_days: value,
+                ..AppSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+        for value in [1, 1440] {
+            let settings = AppSettings {
+                app_lock_timeout_minutes: value,
+                ..AppSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn validation_accepts_port_one_for_every_default_protocol() {
+        let mut settings = AppSettings::default();
+        settings.default_ports.ssh = 1;
+        settings.default_ports.ftp = 1;
+        settings.default_ports.rdp = 1;
+        settings.default_ports.vnc = 1;
+        assert!(settings.validate().is_ok());
+    }
 }
