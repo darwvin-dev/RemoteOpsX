@@ -83,10 +83,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="logo" />
-          <span>
-            RemoteOpsX
-            <small>remote operations cockpit</small>
-          </span>
+          <span>RemoteOpsX</span>
         </div>
         <button ref={commandTriggerRef} className="command-trigger" onClick={() => setPaletteOpen(true)}>
           <span>Search servers, actions, runbooks…</span>
@@ -102,9 +99,9 @@ export default function App() {
             {alerts.length} alerts
           </button>
         </div>
-        <button className="tiny" onClick={() => setShowRunbooks(true)}>▶ Runbooks</button>
-        <button className="tiny" onClick={() => setShowTunnels(true)}>⇄ Tunnels</button>
-        <button ref={settingsTriggerRef} className="tiny" onClick={() => openSettings(settingsTriggerRef.current)}>⚙ Settings</button>
+        <button className="tiny" onClick={() => setShowRunbooks(true)}>Runbooks</button>
+        <button className="tiny" onClick={() => setShowTunnels(true)}>Tunnels</button>
+        <button ref={settingsTriggerRef} className="tiny" onClick={() => openSettings(settingsTriggerRef.current)}>Settings</button>
       </header>
 
       <ServerSidebar onNew={openNewServer} onEdit={openEditServer} />

@@ -1,5 +1,4 @@
-/* RemoteOpsX — polished ops cockpit.
-   Dark, dense and keyboard-friendly, with calm hierarchy for incident work. */
+/* RemoteOpsX — quiet, dense operations workspace. */
 
 :root,
 :root[data-theme="dark"] {
@@ -30,10 +29,10 @@
   --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", ui-monospace, monospace;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 18px;
-  --shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
-  --glow: 0 0 0 1px rgba(45, 212, 191, 0.26), 0 16px 50px rgba(45, 212, 191, 0.08);
+  --radius: 8px;
+  --radius-lg: 10px;
+  --shadow: 0 16px 44px rgba(0, 0, 0, 0.38);
+  --glow: 0 0 0 1px rgba(45, 212, 191, 0.18);
 }
 
 :root[data-theme="light"] {
@@ -77,10 +76,7 @@ body,
 
 body {
   font-family: var(--sans);
-  background:
-    radial-gradient(circle at top left, rgba(45, 212, 191, 0.13), transparent 30%),
-    radial-gradient(circle at 70% -10%, rgba(74, 168, 255, 0.12), transparent 28%),
-    var(--bg-0);
+  background: var(--bg-0);
   color: var(--text-0);
   font-size: 13px;
   overflow: hidden;
@@ -88,10 +84,7 @@ body {
 }
 
 :root[data-theme="light"] body {
-  background:
-    radial-gradient(circle at top left, rgba(8, 127, 117, 0.09), transparent 30%),
-    radial-gradient(circle at 70% -10%, rgba(23, 111, 186, 0.08), transparent 28%),
-    var(--bg-0);
+  background: var(--bg-0);
 }
 
 :root[data-theme="light"] button {
@@ -141,24 +134,23 @@ textarea {
 button {
   cursor: pointer;
   border: 1px solid var(--border-strong);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  background: rgba(255, 255, 255, 0.035);
   color: var(--text-0);
   border-radius: var(--radius-sm);
   padding: 7px 11px;
   font-size: 12px;
-  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 button:hover {
   background: var(--bg-3);
   border-color: rgba(45, 212, 191, 0.38);
-  transform: translateY(-1px);
 }
 
-button:active { transform: translateY(0); }
-button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-button.primary { background: linear-gradient(135deg, #168980, #1d5f9f); border-color: rgba(45, 212, 191, 0.7); color: #edfffc; box-shadow: var(--glow); }
-button.primary:hover { background: linear-gradient(135deg, #1aa095, #2370ba); }
+button:active { background: var(--bg-4); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: #147e76; border-color: rgba(45, 212, 191, 0.55); color: #edfffc; box-shadow: none; }
+button.primary:hover { background: #199188; }
 button.danger { border-color: color-mix(in srgb, var(--danger-text) 45%, transparent); color: var(--danger-text); }
 button.danger:hover { background: var(--danger-surface); border-color: var(--danger-text); }
 button.ghost { background: transparent; border-color: transparent; color: var(--text-1); box-shadow: none; }
@@ -214,76 +206,59 @@ kbd {
 
 .app {
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr) 384px;
-  grid-template-rows: 52px minmax(0, 1fr) auto;
+  grid-template-columns: 268px minmax(0, 1fr) 348px;
+  grid-template-rows: 46px minmax(0, 1fr) auto;
   grid-template-areas:
     "topbar topbar topbar"
     "sidebar main right"
     "sidebar bottom right";
   height: 100vh;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 20%, transparent 80%, rgba(255, 255, 255, 0.02)),
-    var(--bg-0);
+  background: var(--bg-0);
 }
 
-.app.right-collapsed { grid-template-columns: 292px minmax(0, 1fr) 0; }
+.app.right-collapsed { grid-template-columns: 268px minmax(0, 1fr) 0; }
 
 .topbar {
   grid-area: topbar;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
-  background: rgba(10, 15, 24, 0.86);
-  backdrop-filter: blur(18px);
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--bg-1);
   border-bottom: 1px solid var(--border);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
+  min-width: 0;
 }
 
 .topbar .brand {
-  min-width: 242px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
+  min-width: 158px;
+  font-weight: 750;
+  letter-spacing: 0;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
 .topbar .brand .logo {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.24), transparent 45%),
-    linear-gradient(135deg, var(--accent), var(--accent-2));
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--accent);
   display: inline-block;
-  box-shadow: 0 0 22px rgba(45, 212, 191, 0.28);
-}
-
-.topbar .brand small {
-  display: block;
-  color: var(--text-2);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.35px;
-  text-transform: uppercase;
-  margin-top: 1px;
 }
 
 .command-trigger {
-  flex: 0 1 420px;
+  flex: 0 1 360px;
   min-width: 220px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  height: 34px;
+  height: 30px;
   padding: 0 8px 0 12px;
   color: var(--text-2);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--bg-2);
   border-color: var(--border);
   text-align: left;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .command-trigger:hover { color: var(--text-0); transform: none; }
@@ -294,8 +269,8 @@ kbd {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
-  padding: 4px 8px;
-  border-radius: 999px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   color: var(--text-1);
@@ -308,17 +283,17 @@ button.status-chip { box-shadow: none; }
 
 .sidebar {
   grid-area: sidebar;
-  background: rgba(13, 19, 32, 0.88);
+  background: var(--bg-1);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  backdrop-filter: blur(16px);
+  min-width: 0;
 }
 
 .main {
   grid-area: main;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 110px);
+  background: var(--bg-0);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -327,23 +302,24 @@ button.status-chip { box-shadow: none; }
 
 .right {
   grid-area: right;
-  background: rgba(13, 19, 32, 0.92);
+  background: var(--bg-1);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
-  backdrop-filter: blur(16px);
 }
 
 .bottom {
   grid-area: bottom;
-  background: rgba(13, 19, 32, 0.94);
+  background: var(--bg-1);
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   transition: max-height 0.16s ease;
   min-height: 36px;
+  min-width: 0;
 }
 
 /* ---------- Sidebar ---------- */
@@ -550,27 +526,15 @@ button.status-chip { box-shadow: none; }
 .metric-card,
 .runbook-card {
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  background: var(--bg-1);
   border-radius: var(--radius-lg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .hero-card {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) 360px;
-  gap: 20px;
-  min-height: 276px;
+  min-height: 0;
   overflow: hidden;
-  padding: 30px;
-}
-
-.hero-card::after {
-  content: "";
-  position: absolute;
-  inset: auto -80px -160px 34%;
-  height: 260px;
-  background: radial-gradient(circle, rgba(45, 212, 191, 0.14), transparent 70%);
+  padding: 18px;
 }
 
 .hero-copy { position: relative; z-index: 1; max-width: 720px; }
@@ -584,53 +548,22 @@ button.status-chip { box-shadow: none; }
   font-weight: 800;
 }
 .hero-copy h1 {
-  margin: 10px 0 10px;
+  margin: 8px 0 7px;
   max-width: 640px;
-  font-size: clamp(28px, 4vw, 52px);
-  line-height: 0.96;
-  letter-spacing: -1.8px;
+  font-size: 24px;
+  line-height: 1.14;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 .hero-copy p {
   color: var(--text-1);
-  line-height: 1.65;
+  line-height: 1.5;
   max-width: 620px;
   margin: 0;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
-.hero-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 22px; }
-
-.hero-visual {
-  position: relative;
-  min-height: 240px;
-  display: grid;
-  place-items: center;
-}
-
-.orbit {
-  position: absolute;
-  border: 1px dashed rgba(45, 212, 191, 0.22);
-  border-radius: 50%;
-}
-.orbit.one { width: 230px; height: 230px; }
-.orbit.two { width: 150px; height: 150px; border-color: rgba(74, 168, 255, 0.24); }
-.ops-node {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  border: 1px solid rgba(45, 212, 191, 0.32);
-  background: rgba(7, 11, 18, 0.86);
-  color: var(--text-0);
-  font-weight: 900;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
-}
-.ops-node.center { width: 76px; height: 76px; border-radius: 22px; color: var(--accent); font-size: 22px; }
-.ops-node.n1 { transform: translate(-112px, -72px); }
-.ops-node.n2 { transform: translate(116px, -58px); }
-.ops-node.n3 { transform: translate(-92px, 88px); }
-.ops-node.n4 { transform: translate(116px, 78px); }
+.hero-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 
 .dashboard-grid {
   display: grid;
@@ -649,10 +582,10 @@ button.status-chip { box-shadow: none; }
   gap: 12px;
   margin-top: 14px;
 }
-.quick-card { padding: 18px; min-height: 182px; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
+.quick-card { padding: 14px; min-height: 154px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; }
 .quick-card h3 { margin: 6px 0 4px; font-size: 17px; }
 .quick-card p { margin: 0; color: var(--text-1); line-height: 1.5; }
-.primary-card { background: linear-gradient(135deg, rgba(45, 212, 191, 0.11), rgba(74, 168, 255, 0.07)); }
+.primary-card { background: color-mix(in srgb, var(--accent) 8%, var(--bg-1)); }
 .quick-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .shortcut-row { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
 .mini-server-list { display: flex; flex-direction: column; gap: 6px; }
@@ -838,7 +771,7 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
 
 /* ---------- Bottom panel ---------- */
 
-.bottom-tabs { display: flex; align-items: center; background: rgba(13, 19, 32, 0.92); border-bottom: 1px solid var(--border); min-height: 36px; }
+.bottom-tabs { display: flex; align-items: center; background: rgba(13, 19, 32, 0.92); border-bottom: 1px solid var(--border); min-height: 36px; min-width: 0; max-width: 100%; overflow-x: auto; }
 .bottom.collapsed .bottom-tabs { border-bottom: 0; }
 .bottom-tabs button {
   display: flex;
@@ -1226,7 +1159,7 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
 @media (max-width: 940px) {
   .app,
   .app.right-collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 260px minmax(0, 1fr) auto;
     grid-template-areas:
       "topbar"
@@ -1235,10 +1168,32 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
       "bottom";
   }
   .right { display: none; }
-  .topbar { flex-wrap: wrap; height: auto; padding: 10px; }
-  .topbar .brand { min-width: 0; }
-  .command-trigger { order: 3; flex-basis: 100%; }
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    height: auto;
+    padding: 8px 10px;
+    overflow: hidden;
+  }
+  .topbar .brand { min-width: 0; flex: 1 1 140px; }
+  .topbar > .status-chip { display: none; }
+  .topbar .spacer,
   .top-stats { display: none; }
+  .topbar button.tiny { padding: 5px 7px; }
+  .command-trigger {
+    order: 2;
+    min-width: 0;
+    width: 100%;
+    flex: 0 0 100%;
+  }
+  .command-trigger span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .env-filter button { font-size: 9px; padding-left: 4px; padding-right: 4px; }
+  .env-filter button span { margin-left: 2px; }
   .dashboard-grid,
   .runbook-library,
   .launcher-grid,
@@ -1252,7 +1207,10 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
   .ports-grid,
   .settings-toggles { grid-template-columns: 1fr; }
   .start-dashboard { padding: 14px; }
-  .hero-card { padding: 20px; }
+  .hero-card { padding: 18px; }
+  .hero-copy h1 { font-size: 22px; }
+  .bottom-tabs button { flex: 0 0 auto; }
+  .panel-toggle { margin-left: 0; }
   .step-head { grid-template-columns: auto minmax(0, 1fr); }
   .step-cmd { grid-column: 2; }
 }

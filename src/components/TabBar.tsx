@@ -7,7 +7,7 @@ export function TabBar() {
   const setActiveTab = useStore((s) => s.setActiveTab);
   const closeTab = useStore((s) => s.closeTab);
 
-  if (tabs.length === 0) return <div className="tabbar" />;
+  if (tabs.length === 0) return null;
 
   return (
     <div className="tabbar">

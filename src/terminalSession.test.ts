@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { startTerminalSession } from "./terminalSession";
+import { startTerminalSession, terminalBackendSessionId } from "./terminalSession";
 
 describe("terminal session startup", () => {
   it("registers output and exit listeners before spawning", async () => {
@@ -40,5 +40,11 @@ describe("terminal session startup", () => {
     })).rejects.toThrow("failed");
     expect(removeOutput).toHaveBeenCalledOnce();
     expect(removeExit).toHaveBeenCalledOnce();
+  });
+
+  it("uses a distinct backend session id for each connection generation", () => {
+    expect(terminalBackendSessionId("tab-1", 0)).toBe("tab-1:0");
+    expect(terminalBackendSessionId("tab-1", 1)).toBe("tab-1:1");
+    expect(terminalBackendSessionId("tab-1", 0)).not.toBe(terminalBackendSessionId("tab-1", 1));
   });
 });

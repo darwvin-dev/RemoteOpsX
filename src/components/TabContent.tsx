@@ -91,11 +91,10 @@ function StartDashboard({
     <div className="start-dashboard">
       <section className="hero-card">
         <div className="hero-copy">
-          <span className="eyebrow">Linux remote operations</span>
-          <h1>Command every host from one calm cockpit.</h1>
+          <span className="eyebrow">Workspace</span>
+          <h1>Remote operations, organized.</h1>
           <p>
-            Open SSH/SFTP/FTP/RDP/VNC, stream live health, inspect services, collect logs and run safe
-            automation without leaving the workspace.
+            Connect to servers, inspect health, browse files, review logs and run controlled diagnostics.
           </p>
           <div className="hero-actions">
             <button className="primary" onClick={focusedServer ? () => onOpenTab("ssh", focusedServer) : onNewServer}>
@@ -104,15 +103,6 @@ function StartDashboard({
             <button onClick={onOpenRunbooks}>Run diagnostics</button>
             <button className="ghost" onClick={onOpenTunnels}>Tunnels</button>
           </div>
-        </div>
-        <div className="hero-visual" aria-hidden="true">
-          <div className="orbit one" />
-          <div className="orbit two" />
-          <div className="ops-node center">ROX</div>
-          <div className="ops-node n1">SSH</div>
-          <div className="ops-node n2">SFTP</div>
-          <div className="ops-node n3">RDP</div>
-          <div className="ops-node n4">VNC</div>
         </div>
       </section>
 
@@ -165,9 +155,9 @@ function StartDashboard({
         </div>
 
         <div className="quick-card">
-          <span className="eyebrow">Keyboard flow</span>
-          <h3>Jump anywhere fast</h3>
-          <p>Use the command palette for servers, panels, tabs, runbooks and workspace actions.</p>
+          <span className="eyebrow">Command palette</span>
+          <h3>Jump to actions</h3>
+          <p>Search servers, panels, tabs and runbooks from one entry point.</p>
           <div className="shortcut-row">
             <kbd>Ctrl</kbd><kbd>K</kbd>
           </div>

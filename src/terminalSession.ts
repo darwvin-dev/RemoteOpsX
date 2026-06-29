@@ -1,5 +1,9 @@
 export type RemoveListener = () => void;
 
+export function terminalBackendSessionId(tabId: string, generation: number): string {
+  return `${tabId}:${generation}`;
+}
+
 interface StartTerminalSessionOptions {
   tabId: string;
   listen: (event: string, handler: (payload: unknown) => void) => Promise<RemoveListener>;

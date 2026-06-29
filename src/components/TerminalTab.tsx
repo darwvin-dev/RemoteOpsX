@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { useStore } from "../store";
-import { startTerminalSession, type RemoveListener } from "../terminalSession";
+import { startTerminalSession, terminalBackendSessionId, type RemoveListener } from "../terminalSession";
 import type { Server } from "../types";
 
 interface Props {
@@ -32,6 +32,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
     const unlisteners: RemoveListener[] = [];
     let spawned = false;
     let ioErrorShown = false;
+    const backendSessionId = terminalBackendSessionId(tabId, generation);
 
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace',
@@ -61,7 +62,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
     // Forward keystrokes to the PTY (encode to bytes).
     const enc = new TextEncoder();
     term.onData((data) => {
-      void api.ptyWrite(tabId, Array.from(enc.encode(data))).catch((error) => {
+      void api.ptyWrite(backendSessionId, Array.from(enc.encode(data))).catch((error) => {
         if (!ioErrorShown) {
           ioErrorShown = true;
           pushAlert("error", `Terminal write failed (${server.name}): ${error}`, server.id);
@@ -71,7 +72,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
 
     // Keep the remote PTY size in sync with the xterm viewport.
     term.onResize(({ cols, rows }) => {
-      if (spawned) void api.ptyResize(tabId, cols, rows).catch(() => {});
+      if (spawned) void api.ptyResize(backendSessionId, cols, rows).catch(() => {});
     });
 
     async function start() {
@@ -79,10 +80,10 @@ export function TerminalTab({ tabId, server, active }: Props) {
       const rows = term.rows || 24;
       try {
         const removeListeners = await startTerminalSession({
-          tabId,
+          tabId: backendSessionId,
           listen: (event, handler) => listen(event, (message) => handler(message.payload)),
           spawn: async () => {
-            await api.ptySpawn(tabId, server.id, cols, rows);
+            await api.ptySpawn(backendSessionId, server.id, cols, rows);
             spawned = true;
           },
           onOutput: (payload) => term.write(new Uint8Array(payload as number[])),
@@ -93,7 +94,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
         });
         if (disposed) {
           removeListeners();
-          if (spawned) void api.ptyClose(tabId).catch(() => {});
+          if (spawned) void api.ptyClose(backendSessionId).catch(() => {});
           return;
         }
         unlisteners.push(removeListeners);
@@ -120,7 +121,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
       disposed = true;
       ro.disconnect();
       unlisteners.forEach((u) => u());
-      if (spawned) void api.ptyClose(tabId).catch(() => {});
+      if (spawned) void api.ptyClose(backendSessionId).catch(() => {});
       term.dispose();
       termRef.current = null;
     };
