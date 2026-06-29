@@ -883,6 +883,8 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
 .field-help { display: block; margin-top: 5px; color: var(--text-2); font-size: 10px; line-height: 1.4; }
 .folder-picker { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: 8px; }
 .folder-picker select:only-child { grid-column: 1 / -1; }
+.key-picker { display: grid; grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr); gap: 8px; }
+.key-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 9px; }
 .choice-grid { display: grid; gap: 9px; }
 .choice-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .choice-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1201,6 +1203,7 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
   .choice-grid.two,
   .choice-grid.three,
   .folder-picker,
+  .key-picker,
   .form-row,
   .form-row.three { grid-template-columns: 1fr; }
   .settings-grid,

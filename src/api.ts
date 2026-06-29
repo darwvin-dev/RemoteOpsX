@@ -18,6 +18,7 @@ import type {
   RunbookStep,
   Server,
   ServerInput,
+  SshKeyInfo,
   StepResult,
   Tunnel,
 } from "./types";
@@ -50,6 +51,11 @@ export const ptyWrite = (sessionId: string, data: number[]) => invoke<void>("pty
 export const ptyResize = (sessionId: string, cols: number, rows: number) =>
   invoke<void>("pty_resize", { sessionId, cols, rows });
 export const ptyClose = (sessionId: string) => invoke<void>("pty_close", { sessionId });
+
+// ---- SSH keys ----
+export const sshKeysList = () => invoke<SshKeyInfo[]>("ssh_keys_list");
+export const sshKeyInstall = (serverId: string, privateKeyPath: string) =>
+  invoke<CommandOutput>("ssh_key_install", { serverId, privateKeyPath });
 
 // ---- Health ----
 export const healthCollect = (serverId: string) => invoke<HealthSnapshot>("health_collect", { serverId });

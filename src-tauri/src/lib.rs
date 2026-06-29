@@ -15,6 +15,7 @@ pub mod rdp_adapter;
 pub mod runbook_runner;
 pub mod settings;
 pub mod sftp_manager;
+pub mod ssh_keys;
 pub mod ssh_manager;
 pub mod tunnel_manager;
 pub mod vault;
@@ -29,6 +30,7 @@ use error::{CommandResult, DomainError};
 use health_collector::HealthSnapshot;
 use models::*;
 use pty_manager::PtyManager;
+use ssh_keys::SshKeyInfo;
 use tunnel_manager::TunnelManager;
 
 /// Shared application state, managed by Tauri and injected into commands.
@@ -214,6 +216,25 @@ fn pty_close(state: State<AppState>, session_id: String) -> CommandResult<()> {
     let conn = state.db.lock().unwrap();
     let _ = database::close_session(&conn, &session_id);
     Ok(())
+}
+
+// =================== SSH keys ===================
+
+#[tauri::command]
+fn ssh_keys_list() -> CommandResult<Vec<SshKeyInfo>> {
+    re(ssh_keys::discover_local_keys())
+}
+
+#[tauri::command]
+fn ssh_key_install(
+    state: State<AppState>,
+    server_id: String,
+    private_key_path: String,
+) -> CommandResult<CommandOutput> {
+    let server = load_server(&state, &server_id)?;
+    let public_key = re(ssh_keys::public_key_for_private_key(private_key_path))?;
+    let command = ssh_keys::authorized_keys_install_command(&public_key);
+    re(ssh_manager::run_remote(&server, &command))
 }
 
 // =================== Live Health ===================
@@ -612,6 +633,8 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_close,
+            ssh_keys_list,
+            ssh_key_install,
             health_collect,
             run_remote,
             runbooks_list,

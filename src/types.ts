@@ -160,6 +160,13 @@ export interface CommandSnippetInput {
   tags: string[];
 }
 
+export interface SshKeyInfo {
+  name: string;
+  path: string;
+  public_key_path?: string | null;
+  public_key_preview?: string | null;
+}
+
 export interface Tunnel {
   id: string;
   server_id: string;

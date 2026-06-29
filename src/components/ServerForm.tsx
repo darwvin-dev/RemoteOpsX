@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import * as api from "../api";
-import type { AuthType, Environment, Protocol, Server, ServerInput } from "../types";
+import type { AuthType, Environment, Protocol, Server, ServerInput, SshKeyInfo } from "../types";
 
 interface Props {
   server: Server | null; // null = create new
@@ -57,6 +57,9 @@ export function ServerForm({ server, initialFolder, onClose }: Props) {
   const [protocols, setProtocols] = useState<Protocol[]>(server?.protocols ?? ["ssh"]);
   const [authType, setAuthType] = useState<AuthType>(server?.auth_type ?? "key");
   const [keyPath, setKeyPath] = useState(server?.private_key_path ?? "");
+  const [localKeys, setLocalKeys] = useState<SshKeyInfo[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const [installingKey, setInstallingKey] = useState(false);
   const [secret, setSecret] = useState("");
   const [tags, setTags] = useState((server?.tags ?? []).join(", "));
   const [folderChoice, setFolderChoice] = useState(defaultFolder || FOLDER_NONE);
@@ -65,6 +68,24 @@ export function ServerForm({ server, initialFolder, onClose }: Props) {
   const [notes, setNotes] = useState(server?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingKeys(true);
+    void api.sshKeysList()
+      .then((keys) => {
+        if (!cancelled) setLocalKeys(keys);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalKeys([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingKeys(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const folderOptions = useMemo(() => {
     if (
@@ -169,6 +190,31 @@ export function ServerForm({ server, initialFolder, onClose }: Props) {
       setError(String(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function installPublicKey() {
+    setError(null);
+    if (!server) {
+      setError("Save the profile first, then install the public key on the server.");
+      return;
+    }
+    if (!keyPath.trim()) {
+      setError("Choose or enter a private key path first.");
+      return;
+    }
+    setInstallingKey(true);
+    try {
+      const output = await api.sshKeyInstall(server.id, keyPath.trim());
+      if (!output.success) {
+        setError(output.stderr.trim() || output.stdout.trim() || `Key install failed with exit code ${output.exit_code}.`);
+        return;
+      }
+      pushAlert("info", `Installed public key on "${server.name}"`);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setInstallingKey(false);
     }
   }
 
@@ -320,13 +366,50 @@ export function ServerForm({ server, initialFolder, onClose }: Props) {
               />
               <small className="field-help">Saved to the OS keyring. It is never written into SQLite.</small>
             </div>
-          ) : (
-            <div>
-              <label>Private key path</label>
-              <input value={keyPath} onChange={(event) => setKeyPath(event.target.value)} placeholder="~/.ssh/id_ed25519" />
-              <small className="field-help">Encrypted keys use your SSH agent or the interactive SSH prompt.</small>
+          ) : null}
+
+          <div>
+            <label>{authType === "key" ? "Private key" : "Public key to install"}</label>
+            <div className="key-picker">
+              <select
+                value={localKeys.some((key) => key.path === keyPath) ? keyPath : ""}
+                onChange={(event) => setKeyPath(event.target.value)}
+                disabled={loadingKeys}
+              >
+                <option value="">{loadingKeys ? "Scanning ~/.ssh…" : "Choose from ~/.ssh"}</option>
+                {localKeys.map((key) => (
+                  <option key={key.path} value={key.path}>
+                    {key.name}{key.public_key_path ? "" : " (no .pub file)"}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={keyPath}
+                onChange={(event) => setKeyPath(event.target.value)}
+                placeholder="~/.ssh/id_ed25519"
+              />
             </div>
-          )}
+            <small className="field-help">
+              RemoteOpsX never copies private keys to the server. Install adds the matching public key to <code>~/.ssh/authorized_keys</code>.
+            </small>
+            {keyPath && (
+              <div className="key-actions">
+                <button
+                  type="button"
+                  onClick={() => void installPublicKey()}
+                  disabled={installingKey || !server}
+                >
+                  {installingKey ? "Installing…" : "Install public key on server"}
+                </button>
+                {!server && <span className="muted">Save this profile before installing a key.</span>}
+              </div>
+            )}
+            {localKeys.length > 0 && keyPath && (
+              <small className="field-help">
+                {localKeys.find((key) => key.path === keyPath)?.public_key_preview ?? "A .pub file was not found; ssh-keygen will derive the public key if possible."}
+              </small>
+            )}
+          </div>
 
           <div className="form-section">
             <span className="section-kicker">Context</span>
