@@ -14,12 +14,59 @@ use anyhow::{anyhow, Result};
 use crate::models::{Server, Tunnel};
 use crate::ssh_manager;
 
-fn validate_tunnel(tunnel: &Tunnel) -> Result<()> {
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub(crate) struct TunnelValidationError {
+    pub field: &'static str,
+    message: String,
+}
+
+impl TunnelValidationError {
+    fn new(field: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            field,
+            message: message.into(),
+        }
+    }
+}
+
+/// Push auth-related ssh options for `server` onto `args`. Mirrors
+/// `ssh_manager`'s handling so tunnels get the same MaxAuthTries protection.
+fn push_auth_args(server: &Server, args: &mut Vec<String>) {
+    if server.auth_type == "key" {
+        if let Some(key) = &server.private_key_path {
+            if !key.trim().is_empty() {
+                args.push("-i".into());
+                args.push(key.clone());
+                // Only use this key (avoid agent-key MaxAuthTries rejection).
+                args.push("-o".into());
+                args.push("IdentitiesOnly=yes".into());
+            }
+        }
+    } else if server.auth_type == "password" {
+        // Without this, ssh still offers every ssh-agent key before falling
+        // back to password auth, which can exhaust the remote's
+        // MaxAuthTries ("Too many authentication failures") first.
+        args.push("-o".into());
+        args.push("PubkeyAuthentication=no".into());
+    }
+}
+
+pub(crate) fn validate_tunnel(tunnel: &Tunnel) -> Result<(), TunnelValidationError> {
     if tunnel.id.trim().is_empty() {
-        return Err(anyhow!("tunnel id is required"));
+        return Err(TunnelValidationError::new("id", "tunnel id is required"));
+    }
+    if tunnel.server_id.trim().is_empty() {
+        return Err(TunnelValidationError::new(
+            "server_id",
+            "server id is required",
+        ));
     }
     if tunnel.local_port == 0 {
-        return Err(anyhow!("local port must be between 1 and 65535"));
+        return Err(TunnelValidationError::new(
+            "local_port",
+            "local port must be between 1 and 65535",
+        ));
     }
     match tunnel.r#type.as_str() {
         "dynamic" => Ok(()),
@@ -29,14 +76,23 @@ fn validate_tunnel(tunnel: &Tunnel) -> Result<()> {
                 .as_deref()
                 .map_or(true, |host| host.trim().is_empty())
             {
-                return Err(anyhow!("remote host is required"));
+                return Err(TunnelValidationError::new(
+                    "remote_host",
+                    "remote host is required",
+                ));
             }
             if tunnel.remote_port.map_or(true, |port| port == 0) {
-                return Err(anyhow!("remote port must be between 1 and 65535"));
+                return Err(TunnelValidationError::new(
+                    "remote_port",
+                    "remote port must be between 1 and 65535",
+                ));
             }
             Ok(())
         }
-        other => Err(anyhow!("unknown tunnel type: {other}")),
+        other => Err(TunnelValidationError::new(
+            "type",
+            format!("unknown tunnel type: {other}"),
+        )),
     }
 }
 
@@ -64,17 +120,7 @@ impl TunnelManager {
             server.port.to_string(),
         ];
 
-        if server.auth_type == "key" {
-            if let Some(key) = &server.private_key_path {
-                if !key.trim().is_empty() {
-                    args.push("-i".into());
-                    args.push(key.clone());
-                    // Only use this key (avoid agent-key MaxAuthTries rejection).
-                    args.push("-o".into());
-                    args.push("IdentitiesOnly=yes".into());
-                }
-            }
-        }
+        push_auth_args(server, &mut args);
 
         let local_host = tunnel
             .local_host
@@ -186,6 +232,57 @@ mod tests {
             status: "pending".into(),
             created_at: String::new(),
         }
+    }
+
+    fn server(auth_type: &str, key_path: Option<&str>) -> Server {
+        Server {
+            id: "server-1".into(),
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            ftp_port: None,
+            rdp_port: None,
+            vnc_port: None,
+            username: "root".into(),
+            protocols: vec!["ssh".into()],
+            auth_type: auth_type.into(),
+            private_key_path: key_path.map(|s| s.to_string()),
+            tags: vec![],
+            group_name: None,
+            environment: "dev".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    fn has_opt(args: &[String], value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+    }
+
+    #[test]
+    fn password_auth_tunnel_disables_pubkey_so_agent_keys_cant_exhaust_maxauthtries() {
+        let srv = server("password", None);
+        let mut args = Vec::new();
+        push_auth_args(&srv, &mut args);
+
+        assert!(
+            has_opt(&args, "PubkeyAuthentication=no"),
+            "password-auth tunnels must disable pubkey auth, otherwise ssh \
+             offers every ssh-agent key first and a busy agent exhausts the \
+             remote's MaxAuthTries before the tunnel password is ever tried: {args:?}"
+        );
+    }
+
+    #[test]
+    fn key_auth_tunnel_still_uses_identities_only() {
+        let srv = server("key", Some("/home/user/.ssh/id_ed25519"));
+        let mut args = Vec::new();
+        push_auth_args(&srv, &mut args);
+
+        assert!(has_opt(&args, "IdentitiesOnly=yes"));
+        assert!(args.iter().any(|a| a == "/home/user/.ssh/id_ed25519"));
+        assert!(!has_opt(&args, "PubkeyAuthentication=no"));
     }
 
     #[test]

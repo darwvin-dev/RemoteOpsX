@@ -6,6 +6,10 @@ import react from "@vitejs/plugin-react";
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  test: {
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    exclude: ["node_modules/**", "dist/**", "src-tauri/**", ".worktrees/**"],
+  },
   plugins: [react()],
   // Prevent Vite from obscuring Rust errors
   clearScreen: false,

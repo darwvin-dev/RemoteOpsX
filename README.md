@@ -11,6 +11,29 @@ SSH tunnels and **executable runbooks** into one keyboard-friendly desktop app.
 
 ---
 
+## Project status
+
+RemoteOpsX is at a **validated MVP** stage: the core server manager, SSH/SFTP/FTP,
+RDP/VNC launchers, live health, logs, services, runbooks, tunnels and persisted
+settings are implemented. The remaining items are production hardening work such
+as native SSH transport, known-hosts management, app lock, embedded desktop
+protocols, CI/release signing and live integration fixtures.
+
+Current automated handoff checks:
+
+```bash
+npm test
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+git diff --check
+```
+
+See [TODO.md](TODO.md) for the roadmap and `docs/superpowers/` for specs,
+implementation plans and handoff notes.
+
+---
+
 ## Why it's different from a normal terminal
 
 A terminal gives you a shell. RemoteOpsX gives you an **operations cockpit**:
@@ -54,6 +77,9 @@ never interfere with what you're typing.
   Service, Restart Service Safely, VoIP Server Check, SMPP Gateway Check).
 - **SSH Tunnels** — local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) forwards,
   tracked and stoppable, profiles persisted.
+- **Application Settings** — persisted theme, default protocol ports, health
+  refresh interval, retention, app-lock timeout placeholder, transfer conflict
+  behavior and desktop integration flags.
 
 ---
 
@@ -62,6 +88,8 @@ never interfere with what you're typing.
 ```
 src/                         React + TypeScript frontend
   api.ts                     typed wrappers over Tauri commands
+  errors.ts                  normalized frontend error contract
+  settings.ts/settingsStore  typed settings defaults, validation and store
   store.ts                   Zustand global UI state
   types.ts                   shared types (mirror Rust models)
   components/
@@ -71,11 +99,14 @@ src/                         React + TypeScript frontend
     HealthPanel / ServicesPanel
     RunbookRunner / RunbookLauncher
     SftpPanel / RemoteDesktopTab / LogsPanel
-    TunnelManager / RightPanel / BottomPanel / NotesSnippetsPanel
+    TunnelManager / SettingsModal / ToastStack
+    RightPanel / BottomPanel / NotesSnippetsPanel
 
 src-tauri/src/               Rust backend (Tauri v2 commands)
   lib.rs                     command surface + AppState wiring
   database.rs                SQLite schema + queries
+  error.rs                   stable DomainError IPC payload
+  settings.rs                typed settings contract + validation
   vault.rs                   OS keyring (Secret Service) — secrets only here
   ssh_manager.rs             ssh argv builder + one-shot remote exec
   pty_manager.rs             interactive PTY terminals (system ssh)
@@ -95,6 +126,31 @@ per-profile ports with protocol-standard defaults (21, 3389 and 5900).
 The SSH/SFTP/FTP/RDP/VNC/tunnel layers are intentionally thin abstractions over the
 system OpenSSH/curl/FreeRDP binaries so the MVP is robust today, while leaving clean
 seams to swap in native transports later.
+
+---
+
+## Settings and local data
+
+RemoteOpsX stores operational metadata in SQLite at Tauri's per-user app data
+directory, in `remoteopsx.db` (for example, Linux typically resolves this under
+`~/.local/share/dev.remoteopsx.app/`). Secrets stay in the OS keyring and are
+referenced from SQLite by `secret_ref`.
+
+The `app_settings` table is a singleton JSON row with schema version `1`.
+Defaults and validation ranges:
+
+| Setting | Default | Valid range / values |
+| --- | --- | --- |
+| Theme | `system` | `system`, `dark`, `light` |
+| Default ports | SSH `22`, FTP `21`, RDP `3389`, VNC `5900` | `1..=65535` |
+| Health refresh | `3000 ms` | `1000..=60000 ms` |
+| History retention | `90 days` | `1..=3650 days` |
+| App-lock timeout | `15 minutes` | `1..=1440 minutes` |
+| Transfer conflict policy | `ask` | `ask`, `overwrite`, `rename`, `skip` |
+| Desktop clipboard/audio/notifications | enabled | boolean |
+
+The settings UI is available from the top bar or command palette. Changes are
+optimistic in the UI and roll back if backend validation or persistence fails.
 
 ---
 
@@ -149,6 +205,7 @@ Useful scripts:
 
 ```bash
 npm run dev          # Vite dev server only (web UI, no Tauri shell)
+npm test             # frontend regression tests
 npm run build        # type-check + build the frontend
 npm run app:dev      # full Tauri desktop app, hot-reload
 npm run app:build    # produce AppImage / .deb / .rpm bundles
@@ -159,6 +216,33 @@ Backend-only compile check:
 
 ```bash
 cargo check --manifest-path src-tauri/Cargo.toml
+```
+
+Full local validation:
+
+```bash
+npm test
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+git diff --check
+```
+
+---
+
+## Specs, plans and graph
+
+- Completion/hardening spec: `docs/superpowers/specs/2026-06-20-project-hardening-design.md`
+- Production roadmap spec: `docs/superpowers/specs/2026-06-21-production-roadmap-design.md`
+- Implementation plans: `docs/superpowers/plans/`
+- Graphify report and interactive graph: `graphify-out/GRAPH_REPORT.md` and
+  `graphify-out/graph.html`
+
+Regenerate the local code graph after major source changes:
+
+```bash
+graphify update .
+graphify cluster-only .
 ```
 
 ---

@@ -1,20 +1,41 @@
 // Typed wrappers around Tauri commands. One function per backend command so
 // components never touch `invoke` strings directly.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { normalizeRemoteError } from "./errors";
+import { validateSettings } from "./settings";
+import type { AppSettings } from "./settings";
 import type {
+  CommandSnippet,
+  CommandSnippetInput,
   CommandOutput,
   HealthSnapshot,
   RemoteFile,
   Runbook,
   RunbookRun,
   RunbookSpec,
+  SessionRecord,
   RunbookStep,
   Server,
   ServerInput,
   StepResult,
   Tunnel,
 } from "./types";
+
+async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (error) {
+    throw normalizeRemoteError(error);
+  }
+}
+
+// ---- Settings ----
+export const settingsGet = () => invoke<AppSettings>("settings_get");
+export const settingsSave = async (settings: AppSettings) => {
+  validateSettings(settings);
+  return invoke<AppSettings>("settings_save", { settings });
+};
 
 // ---- Servers ----
 export const serversList = () => invoke<Server[]>("servers_list");
@@ -53,6 +74,15 @@ export const runbookRecordRun = (
   results: StepResult[],
 ) => invoke<string>("runbook_record_run", { runbookId, serverId, startedAt, status, results });
 export const runbookRunsList = (limit = 50) => invoke<RunbookRun[]>("runbook_runs_list", { limit });
+
+// ---- Sessions history ----
+export const sessionsList = (limit = 100) => invoke<SessionRecord[]>("sessions_list", { limit });
+
+// ---- Command snippets ----
+export const commandSnippetsList = () => invoke<CommandSnippet[]>("command_snippets_list");
+export const commandSnippetSave = (input: CommandSnippetInput) =>
+  invoke<CommandSnippet>("command_snippet_save", { input });
+export const commandSnippetDelete = (id: string) => invoke<void>("command_snippet_delete", { id });
 
 // ---- Services ----
 export const serviceAction = (serverId: string, action: string, unit: string) =>

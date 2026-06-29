@@ -23,11 +23,11 @@
 
 **Files:** Create `src-tauri/src/error.rs`; modify `src-tauri/src/lib.rs`; test in `src-tauri/src/error.rs`.
 
-- [ ] Write failing tests proving validation errors serialize `code`, `retryable`, `correlation_id`, and `context.field`, while an internal error created from `"secret-canary-value"` never serializes that value.
+- [x] Write failing tests proving validation errors serialize `code`, `retryable`, `correlation_id`, and `context.field`, while an internal error created from `"secret-canary-value"` never serializes that value.
 
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml error::tests` and verify compilation fails because `DomainError` is absent.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml error::tests` and verify compilation fails because `DomainError` is absent.
 
-- [ ] Implement this contract:
+- [x] Implement this contract:
 
 ```rust
 use std::collections::BTreeMap;
@@ -58,9 +58,9 @@ impl DomainError {
 }
 ```
 
-- [ ] Declare `pub mod error`, change `e()` to map through `DomainError::internal`, and replace command return types `Result<T, String>` with `CommandResult<T>`. Direct user-input failures use `DomainError::validation`; operational failures use `e`.
+- [x] Declare `pub mod error`, change `e()` to map through `DomainError::internal`, and replace command return types `Result<T, String>` with `CommandResult<T>`. Direct user-input failures use `DomainError::validation`; operational failures use `e`.
 
-- [ ] Run the focused tests and `cargo test --manifest-path src-tauri/Cargo.toml`; both must exit 0.
+- [x] Run the focused tests and `cargo test --manifest-path src-tauri/Cargo.toml`; both must exit 0.
 
 - [ ] Commit and push:
 
@@ -74,11 +74,11 @@ git push
 
 **Files:** Create `src-tauri/src/settings.rs`; modify `src-tauri/src/database.rs` and `src-tauri/src/lib.rs`; test both Rust modules.
 
-- [ ] Write failing tests asserting system theme, ports 22/21/3389/5900, 3000 ms refresh, and rejection of refresh below 1000 ms and port zero.
+- [x] Write failing tests asserting system theme, ports 22/21/3389/5900, 3000 ms refresh, and rejection of refresh below 1000 ms and port zero.
 
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml settings::tests`; verify RED because `AppSettings` is absent.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml settings::tests`; verify RED because `AppSettings` is absent.
 
-- [ ] Implement serde snake-case enums `Theme { System, Dark, Light }` and `TransferConflictPolicy { Ask, Overwrite, Rename, Skip }`, plus:
+- [x] Implement serde snake-case enums `Theme { System, Dark, Light }` and `TransferConflictPolicy { Ask, Overwrite, Rename, Skip }`, plus:
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,11 +99,11 @@ pub struct AppSettings {
 }
 ```
 
-- [ ] Implement defaults `1`, `system`, `22/21/3389/5900`, `3000`, `90`, `15`, `ask`, and three enabled booleans. `validate()` accepts refresh `1000..=60000`, retention `1..=3650`, timeout `1..=1440`, and nonzero ports; failures return `DomainError::validation` with the exact field path.
+- [x] Implement defaults `1`, `system`, `22/21/3389/5900`, `3000`, `90`, `15`, `ask`, and three enabled booleans. `validate()` accepts refresh `1000..=60000`, retention `1..=3650`, timeout `1..=1440`, and nonzero ports; failures return `DomainError::validation` with the exact field path.
 
-- [ ] Write a failing database test: empty DB returns defaults; save light theme and 5000 ms; reload equals saved value; `app_settings` contains exactly one row.
+- [x] Write a failing database test: empty DB returns defaults; save light theme and 5000 ms; reload equals saved value; `app_settings` contains exactly one row.
 
-- [ ] Add this migration:
+- [x] Add this migration:
 
 ```sql
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 ```
 
-- [ ] Implement `load_settings`: select `value_json`, return defaults on `QueryReturnedNoRows`, otherwise deserialize and validate. Implement `save_settings`: validate, serialize, then atomically upsert singleton row 1 inside `unchecked_transaction()`.
+- [x] Implement `load_settings`: select `value_json`, return defaults on `QueryReturnedNoRows`, otherwise deserialize and validate. Implement `save_settings`: validate, serialize, then atomically upsert singleton row 1 inside `unchecked_transaction()`.
 
 - [ ] Run settings/database suites; commit and push:
 
@@ -130,13 +130,13 @@ git push
 
 **Files:** Modify `src-tauri/src/lib.rs` and `src/api.ts`; create `src/errors.ts`, `src/settings.ts`, and `src/settings.test.ts`.
 
-- [ ] Write failing Vitest cases: nested port patches do not mutate defaults; a structured backend rejection becomes `RemoteOpsError` retaining code and correlation ID; unknown objects become `client.unknown`.
+- [x] Write failing Vitest cases: nested port patches do not mutate defaults; a structured backend rejection becomes `RemoteOpsError` retaining code and correlation ID; unknown objects become `client.unknown`.
 
-- [ ] Run `npm test -- src/settings.test.ts`; verify RED because the new modules are absent.
+- [x] Run `npm test -- src/settings.test.ts`; verify RED because the new modules are absent.
 
-- [ ] Mirror Rust settings types in `settings.ts`, export immutable `DEFAULT_SETTINGS`, and implement `patchSettings(current, patch)` with a nested `default_ports` merge.
+- [x] Mirror Rust settings types in `settings.ts`, export immutable `DEFAULT_SETTINGS`, and implement `patchSettings(current, patch)` with a nested `default_ports` merge.
 
-- [ ] Implement the frontend error type:
+- [x] Implement the frontend error type:
 
 ```ts
 export class RemoteOpsError extends Error {
@@ -160,9 +160,9 @@ export function normalizeRemoteError(value: unknown): RemoteOpsError {
 }
 ```
 
-- [ ] Add `settings_get` and `settings_save` commands. Both lock the DB safely; save validates before persistence and returns the saved value. Register both in `generate_handler!`.
+- [x] Add `settings_get` and `settings_save` commands. Both lock the DB safely; save validates before persistence and returns the saved value. Register both in `generate_handler!`.
 
-- [ ] Replace direct Tauri invoke in `api.ts` with one local generic wrapper that catches and throws `normalizeRemoteError`. Add `settingsGet()` and `settingsSave(settings)`.
+- [x] Replace direct Tauri invoke in `api.ts` with one local generic wrapper that catches and throws `normalizeRemoteError`. Add `settingsGet()` and `settingsSave(settings)`.
 
 - [ ] Verify, commit, and push:
 
@@ -179,15 +179,15 @@ git push
 
 **Files:** Create `src/settingsStore.ts` and `src/components/SettingsModal.tsx`; modify `src/App.tsx`, `src/store.ts`, `src/components/CommandPalette.tsx`, and `src/styles.css`; extend `src/settings.test.ts`.
 
-- [ ] Write a failing state test using injected API functions: load dark settings, patch light, make save throw `disk full`, then assert state rolls back to dark, becomes clean, and retains a normalized error.
+- [x] Write a failing state test using injected API functions: load dark settings, patch light, make save throw `disk full`, then assert state rolls back to dark, becomes clean, and retains a normalized error.
 
-- [ ] Implement a focused Zustand store with `settings`, `persisted`, `loading`, `saving`, `dirty`, `error`, `load`, `patch`, `reset`, and `save`. Export the injected state-machine factory used by the test. Save snapshots persisted state and restores it before rethrowing on failure.
+- [x] Implement a focused Zustand store with `settings`, `persisted`, `loading`, `saving`, `dirty`, `error`, `load`, `patch`, `reset`, and `save`. Export the injected state-machine factory used by the test. Save snapshots persisted state and restores it before rethrowing on failure.
 
-- [ ] Implement `SettingsModal` controlled fields for theme, four ports, refresh seconds, retention days, lock timeout, conflict policy, clipboard, audio, and notifications. Disable Save while clean/loading/saving. Display code and correlation ID. Close only after successful save or confirmed discard.
+- [x] Implement `SettingsModal` controlled fields for theme, four ports, refresh seconds, retention days, lock timeout, conflict policy, clipboard, audio, and notifications. Disable Save while clean/loading/saving. Display code and correlation ID. Close only after successful save or confirmed discard.
 
-- [ ] In `App.tsx`, load once and apply `data-theme`; system mode follows `matchMedia("(prefers-color-scheme: dark)")`. Add top-bar and palette Settings actions.
+- [x] In `App.tsx`, load once and apply `data-theme`; system mode follows `matchMedia("(prefers-color-scheme: dark)")`. Add top-bar and palette Settings actions.
 
-- [ ] Remove `healthIntervalMs` ownership from `store.ts`; health polling reads `health_refresh_interval_ms` from the settings store. Add complete light-theme variables and responsive settings styles.
+- [x] Remove `healthIntervalMs` ownership from `store.ts`; health polling reads `health_refresh_interval_ms` from the settings store. Add complete light-theme variables and responsive settings styles.
 
 - [ ] Verify, commit, and push:
 
@@ -203,7 +203,7 @@ git push
 
 **Files:** Modify `README.md`, `TODO.md`, and this plan.
 
-- [ ] Run full acceptance:
+- [x] Run full acceptance:
 
 ```bash
 npm test
@@ -215,7 +215,7 @@ git diff --check
 
 - [ ] Run `npm run app:dev`; change theme, ports, and refresh interval; restart and verify persistence. Submit an invalid refresh and verify `validation.invalid_value` appears without changing persisted state.
 
-- [ ] Document fields, defaults, ranges, and DB location in `README.md`. Change only the Settings line in `TODO.md` to `✅`. Mark completed plan checkboxes `[x]`.
+- [x] Document fields, defaults, ranges, and DB location in `README.md`. Change only the Settings line in `TODO.md` to `✅`. Mark completed plan checkboxes `[x]`.
 
 - [ ] Commit, push, and compare remote SHA:
 

@@ -8,6 +8,7 @@ interface Props {
   onNewServer: () => void;
   onOpenRunbooks: () => void;
   onOpenTunnels: () => void;
+  onOpenSettings: () => void;
 }
 
 interface PaletteAction {
@@ -29,7 +30,7 @@ const SERVER_ACTIONS: { kind: TabKind; label: string; requiresProtocol?: "ssh" |
 ];
 
 /** Keyboard-first command palette for jumping across servers and common actions. */
-export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onOpenTunnels }: Props) {
+export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onOpenTunnels, onOpenSettings }: Props) {
   const servers = useStore((s) => s.servers);
   const tabs = useStore((s) => s.tabs);
   const activeTabId = useStore((s) => s.activeTabId);
@@ -50,6 +51,14 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
     };
 
     const globalActions: PaletteAction[] = [
+      {
+        id: "settings",
+        title: "Open application settings",
+        eyebrow: "Application",
+        detail: "Configure appearance, connections, retention and desktop integration",
+        keywords: "settings preferences configuration theme ports",
+        run: closeThen(onOpenSettings),
+      },
       {
         id: "new-server",
         title: "Add server profile",
@@ -89,6 +98,14 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
         detail: "Review recent runbook executions",
         keywords: "history runbook runs bottom",
         run: closeThen(() => setBottomPanel("history")),
+      },
+      {
+        id: "sessions",
+        title: "Show SSH session history",
+        eyebrow: "Bottom panel",
+        detail: "Review opened and closed terminal sessions",
+        keywords: "history ssh sessions terminal bottom",
+        run: closeThen(() => setBottomPanel("sessions")),
       },
       {
         id: "toggle-bottom",
@@ -144,6 +161,7 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
     onNewServer,
     onOpenRunbooks,
     onOpenTunnels,
+    onOpenSettings,
     openTab,
     servers,
     setActiveTab,

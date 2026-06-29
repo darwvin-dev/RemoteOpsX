@@ -8,6 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection};
 
 use crate::models::*;
+use crate::settings::{AppSettings, CURRENT_SETTINGS_SCHEMA_VERSION};
 
 /// Open (creating if needed) the SQLite database and run migrations.
 pub fn open(path: &std::path::Path) -> Result<Connection> {
@@ -62,6 +63,15 @@ fn migrate(conn: &Connection) -> Result<()> {
             status      TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS command_snippets (
+            id           TEXT PRIMARY KEY,
+            label        TEXT NOT NULL,
+            command      TEXT NOT NULL,
+            tags_json    TEXT NOT NULL DEFAULT '[]',
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS runbooks (
             id           TEXT PRIMARY KEY,
             name         TEXT NOT NULL,
@@ -92,6 +102,13 @@ fn migrate(conn: &Connection) -> Result<()> {
             remote_port INTEGER,
             status      TEXT NOT NULL,
             created_at  TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+            schema_version INTEGER NOT NULL,
+            value_json TEXT NOT NULL CHECK (length(value_json) <= 65536),
+            updated_at TEXT NOT NULL
         );
         "#,
     )
@@ -124,6 +141,56 @@ fn add_column_if_missing(
 
 fn now() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+pub fn load_settings(conn: &Connection) -> Result<AppSettings> {
+    let result = conn.query_row(
+        "SELECT schema_version, value_json FROM app_settings WHERE singleton_id = 1",
+        [],
+        |row| Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?)),
+    );
+    let (stored_schema_version, value_json) = match result {
+        Ok(value) => value,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(AppSettings::default()),
+        Err(error) => return Err(error.into()),
+    };
+    let settings: AppSettings =
+        serde_json::from_str(&value_json).context("failed to deserialize application settings")?;
+    if stored_schema_version != settings.schema_version {
+        return Err(anyhow!(
+            "settings schema version mismatch between database marker and JSON payload"
+        ));
+    }
+    if stored_schema_version != CURRENT_SETTINGS_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "unsupported settings schema version {}; supported version is {}",
+            stored_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        ));
+    }
+    settings
+        .validate()
+        .map_err(|error| anyhow!("invalid persisted setting: {}", error.message))?;
+    Ok(settings)
+}
+
+pub fn save_settings(conn: &Connection, settings: &AppSettings) -> Result<()> {
+    settings
+        .validate()
+        .map_err(|error| anyhow!("invalid setting: {}", error.message))?;
+    let value_json = serde_json::to_string(settings)?;
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+         VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(singleton_id) DO UPDATE SET
+             schema_version=excluded.schema_version,
+             value_json=excluded.value_json,
+             updated_at=excluded.updated_at",
+        params![settings.schema_version, value_json, now()],
+    )?;
+    transaction.commit()?;
+    Ok(())
 }
 
 fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
@@ -482,6 +549,112 @@ pub fn close_session(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn list_sessions(conn: &Connection, limit: i64) -> Result<Vec<SessionRecord>> {
+    let limit = limit.clamp(1, 500);
+    let mut stmt = conn.prepare(
+        "SELECT id,server_id,protocol,started_at,ended_at,status
+         FROM sessions ORDER BY started_at DESC LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok(SessionRecord {
+            id: row.get("id")?,
+            server_id: row.get("server_id")?,
+            protocol: row.get("protocol")?,
+            started_at: row.get("started_at")?,
+            ended_at: row.get("ended_at")?,
+            status: row.get("status")?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+// ---------- command snippets ----------
+
+fn normalize_snippet_tags(tags: &[String]) -> Vec<String> {
+    let mut normalized = tags
+        .iter()
+        .map(|tag| tag.trim().to_lowercase())
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
+pub fn validate_snippet_input(input: &CommandSnippetInput) -> Result<()> {
+    if input.label.trim().is_empty() {
+        return Err(anyhow!("snippet label is required"));
+    }
+    if input.command.trim().is_empty() {
+        return Err(anyhow!("snippet command is required"));
+    }
+    if input.label.chars().count() > 80 {
+        return Err(anyhow!("snippet label must be 80 characters or less"));
+    }
+    if input.command.chars().count() > 4000 {
+        return Err(anyhow!("snippet command must be 4000 characters or less"));
+    }
+    if normalize_snippet_tags(&input.tags).len() > 16 {
+        return Err(anyhow!("snippet can target at most 16 tags"));
+    }
+    Ok(())
+}
+
+fn row_to_snippet(row: &rusqlite::Row) -> rusqlite::Result<CommandSnippet> {
+    let tags_json: String = row.get("tags_json")?;
+    Ok(CommandSnippet {
+        id: row.get("id")?,
+        label: row.get("label")?,
+        command: row.get("command")?,
+        tags: serde_json::from_str(&tags_json).unwrap_or_default(),
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+pub fn list_command_snippets(conn: &Connection) -> Result<Vec<CommandSnippet>> {
+    let mut stmt = conn.prepare("SELECT * FROM command_snippets ORDER BY label COLLATE NOCASE")?;
+    let rows = stmt.query_map([], row_to_snippet)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn save_command_snippet(
+    conn: &Connection,
+    input: &CommandSnippetInput,
+) -> Result<CommandSnippet> {
+    validate_snippet_input(input)?;
+    let id = input
+        .id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let label = input.label.trim();
+    let command = input.command.trim();
+    let tags = normalize_snippet_tags(&input.tags);
+    let tags_json = serde_json::to_string(&tags)?;
+    let ts = now();
+    let updated = conn.execute(
+        "UPDATE command_snippets SET label=?2, command=?3, tags_json=?4, updated_at=?5
+         WHERE id=?1",
+        params![&id, label, command, tags_json, ts],
+    )?;
+    if updated == 0 {
+        conn.execute(
+            "INSERT INTO command_snippets (id,label,command,tags_json,created_at,updated_at)
+             VALUES (?1,?2,?3,?4,?5,?5)",
+            params![&id, label, command, tags_json, ts],
+        )?;
+    }
+    let mut stmt = conn.prepare("SELECT * FROM command_snippets WHERE id = ?1")?;
+    Ok(stmt.query_row(params![&id], row_to_snippet)?)
+}
+
+pub fn delete_command_snippet(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM command_snippets WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 // ---------- tunnels ----------
 
 pub fn insert_tunnel(conn: &Connection, t: &Tunnel) -> Result<()> {
@@ -525,6 +698,7 @@ pub fn list_tunnels(conn: &Connection) -> Result<Vec<Tunnel>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{AppSettings, Theme};
 
     fn input(auth_type: &str) -> ServerInput {
         ServerInput {
@@ -632,5 +806,171 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn sessions_history_lists_recent_entries_and_clamps_limit() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+
+        open_session(&conn, "older", "server-1", "ssh").unwrap();
+        close_session(&conn, "older").unwrap();
+        open_session(&conn, "newer", "server-2", "ssh").unwrap();
+
+        let sessions = list_sessions(&conn, 1).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "newer");
+        assert_eq!(sessions[0].status, "open");
+
+        let sessions = list_sessions(&conn, -10).unwrap();
+        assert_eq!(sessions.len(), 1);
+    }
+
+    #[test]
+    fn command_snippets_are_validated_normalized_and_updated() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let snippet = save_command_snippet(
+            &conn,
+            &CommandSnippetInput {
+                id: None,
+                label: "  Disk check  ".into(),
+                command: "  df -h  ".into(),
+                tags: vec!["Prod".into(), " prod ".into(), "db".into(), "".into()],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(snippet.label, "Disk check");
+        assert_eq!(snippet.command, "df -h");
+        assert_eq!(snippet.tags, vec!["db".to_string(), "prod".to_string()]);
+
+        let updated = save_command_snippet(
+            &conn,
+            &CommandSnippetInput {
+                id: Some(snippet.id.clone()),
+                label: "Memory".into(),
+                command: "free -m".into(),
+                tags: vec![],
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.id, snippet.id);
+        assert_eq!(updated.label, "Memory");
+        assert!(updated.tags.is_empty());
+        assert_eq!(list_command_snippets(&conn).unwrap().len(), 1);
+
+        assert!(save_command_snippet(
+            &conn,
+            &CommandSnippetInput {
+                id: None,
+                label: "".into(),
+                command: "uptime".into(),
+                tags: vec![],
+            },
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn empty_migrated_database_loads_default_settings() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(load_settings(&conn).unwrap(), AppSettings::default());
+    }
+
+    #[test]
+    fn settings_save_reload_and_replace_singleton_atomically() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let first = AppSettings {
+            theme: Theme::Light,
+            health_refresh_interval_ms: 5000,
+            ..AppSettings::default()
+        };
+        save_settings(&conn, &first).unwrap();
+        assert_eq!(load_settings(&conn).unwrap(), first);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let second = AppSettings {
+            theme: Theme::Dark,
+            ..AppSettings::default()
+        };
+        save_settings(&conn, &second).unwrap();
+        assert_eq!(load_settings(&conn).unwrap(), second);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM app_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn load_settings_rejects_database_and_json_schema_version_mismatch() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let value_json = serde_json::to_string(&AppSettings::default()).unwrap();
+        conn.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, 2, ?1, ?2)",
+            params![value_json, now()],
+        )
+        .unwrap();
+
+        let error = load_settings(&conn).unwrap_err().to_string();
+        assert!(error.contains("schema version mismatch"));
+    }
+
+    #[test]
+    fn load_settings_rejects_unsupported_schema_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let settings = AppSettings {
+            schema_version: 2,
+            ..AppSettings::default()
+        };
+        conn.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, 2, ?1, ?2)",
+            params![serde_json::to_string(&settings).unwrap(), now()],
+        )
+        .unwrap();
+
+        let error = load_settings(&conn).unwrap_err().to_string();
+        assert!(error.contains("unsupported settings schema version"));
+    }
+
+    #[test]
+    fn invalid_save_preserves_previously_persisted_settings() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let original = AppSettings {
+            theme: Theme::Light,
+            ..AppSettings::default()
+        };
+        save_settings(&conn, &original).unwrap();
+        let invalid = AppSettings {
+            health_refresh_interval_ms: 999,
+            ..AppSettings::default()
+        };
+
+        assert!(save_settings(&conn, &invalid).is_err());
+        assert_eq!(load_settings(&conn).unwrap(), original);
+    }
+
+    #[test]
+    fn load_settings_rejects_corrupt_json() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, 1, 'not-json', ?1)",
+            params![now()],
+        )
+        .unwrap();
+
+        assert!(load_settings(&conn).is_err());
     }
 }

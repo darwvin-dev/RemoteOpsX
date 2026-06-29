@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api";
 import { useStore } from "../store";
+import { useSettingsStore } from "../settingsStore";
 import type { HealthSnapshot, Server } from "../types";
 
 /** Live agentless health for the focused server. Polls `health_collect` on the
  *  configurable interval and renders metric cards, sparklines and warnings. */
 export function HealthPanel({ server }: { server: Server }) {
-  const intervalMs = useStore((s) => s.healthIntervalMs);
-  const setInterval_ = useStore((s) => s.setHealthInterval);
+  const intervalMs = useSettingsStore((state) => state.settings.health_refresh_interval_ms);
   const pushAlert = useStore((s) => s.pushAlert);
   const [snap, setSnap] = useState<HealthSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,17 +59,7 @@ export function HealthPanel({ server }: { server: Server }) {
         </div>
         <div className="flex">
           <button className="tiny ghost" onClick={() => setPaused((p) => !p)}>{paused ? "▶" : "⏸"}</button>
-          <select
-            style={{ width: "auto" }}
-            value={intervalMs}
-            onChange={(e) => setInterval_(Number(e.target.value))}
-            title="Refresh interval"
-          >
-            <option value={2000}>2s</option>
-            <option value={3000}>3s</option>
-            <option value={5000}>5s</option>
-            <option value={10000}>10s</option>
-          </select>
+          <span className="muted" title="Health refresh interval">{intervalMs / 1000}s</span>
         </div>
       </div>
 

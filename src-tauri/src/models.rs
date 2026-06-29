@@ -170,6 +170,43 @@ pub struct RunbookRun {
     pub results: Vec<StepResult>,
 }
 
+/// A persisted remote session entry shown in the workspace history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionRecord {
+    pub id: String,
+    pub server_id: String,
+    pub protocol: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub status: String,
+}
+
+/// User-defined command snippet. Snippets can be global or scoped to servers
+/// that carry at least one matching tag.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommandSnippet {
+    #[serde(default)]
+    pub id: String,
+    pub label: String,
+    pub command: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandSnippetInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub label: String,
+    pub command: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
 /// SSH tunnel descriptor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tunnel {

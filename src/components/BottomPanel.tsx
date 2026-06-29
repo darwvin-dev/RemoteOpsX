@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api";
 import { useStore } from "../store";
-import type { RunbookRun } from "../types";
+import type { RunbookRun, SessionRecord } from "../types";
 
 /** Bottom dock: command output stream, runbook run history and the alert log. */
 export function BottomPanel() {
@@ -15,11 +15,15 @@ export function BottomPanel() {
   const clearAlerts = useStore((s) => s.clearAlerts);
   const servers = useStore((s) => s.servers);
   const [runs, setRuns] = useState<RunbookRun[]>([]);
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const outRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (view === "history" && open) {
       void api.runbookRunsList(50).then(setRuns).catch(() => {});
+    }
+    if (view === "sessions" && open) {
+      void api.sessionsList(100).then(setSessions).catch(() => {});
     }
   }, [view, open]);
 
@@ -36,6 +40,7 @@ export function BottomPanel() {
           Output <span>{outputLines.length}</span>
         </button>
         <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>Runbook history</button>
+        <button className={view === "sessions" ? "active" : ""} onClick={() => setView("sessions")}>Sessions</button>
         <button className={view === "alerts" ? "active" : ""} onClick={() => setView("alerts")}>
           Alerts <span>{alerts.length}</span>
         </button>
@@ -64,6 +69,26 @@ export function BottomPanel() {
                   <span className={`status-badge ${ok ? "status-ok" : "status-crit"}`}>{r.status}</span>
                   <span>{serverName(r.server_id)} · {r.results.length} steps</span>
                   {r.ended_at && <span className="muted">{new Date(r.ended_at).toLocaleTimeString()}</span>}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {open && view === "sessions" && (
+        <div className="bottom-body">
+          {sessions.length === 0 ? (
+            <span className="muted">No SSH sessions yet.</span>
+          ) : (
+            sessions.map((session) => {
+              const openSession = session.status === "open";
+              return (
+                <div key={session.id} className="alert-row">
+                  <span className="at">{new Date(session.started_at).toLocaleString()}</span>
+                  <span className={`status-badge ${openSession ? "status-ok" : "status-warn"}`}>{session.status}</span>
+                  <span>{serverName(session.server_id)} · {session.protocol.toUpperCase()}</span>
+                  {session.ended_at ? <span className="muted">{new Date(session.ended_at).toLocaleTimeString()}</span> : <span className="muted">active</span>}
                 </div>
               );
             })

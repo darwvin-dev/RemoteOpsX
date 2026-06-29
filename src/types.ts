@@ -135,6 +135,31 @@ export interface RunbookRun {
   results: StepResult[];
 }
 
+export interface SessionRecord {
+  id: string;
+  server_id: string;
+  protocol: string;
+  started_at: string;
+  ended_at?: string | null;
+  status: string;
+}
+
+export interface CommandSnippet {
+  id: string;
+  label: string;
+  command: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommandSnippetInput {
+  id?: string | null;
+  label: string;
+  command: string;
+  tags: string[];
+}
+
 export interface Tunnel {
   id: string;
   server_id: string;
@@ -168,4 +193,4 @@ export interface Tab {
 }
 
 export type RightPanelView = "health" | "services" | "notes" | "snippets";
-export type BottomPanelView = "output" | "history" | "alerts";
+export type BottomPanelView = "output" | "history" | "sessions" | "alerts";

@@ -57,6 +57,14 @@ fn push_key_args(server: &Server, args: &mut Vec<String>) {
                 args.push("IdentitiesOnly=yes".into());
             }
         }
+    } else if server.auth_type == "password" {
+        // Without this, ssh still offers every ssh-agent key (and default
+        // identity files) before falling back to password auth. On a host
+        // with several agent keys loaded, the server's MaxAuthTries can be
+        // exhausted by those pubkey attempts alone, and sshd disconnects with
+        // "Too many authentication failures" before the password is tried.
+        args.push("-o".into());
+        args.push("PubkeyAuthentication=no".into());
     }
 }
 
@@ -147,6 +155,24 @@ pub fn apply_password_env(cmd: &mut Command, server: &Server) {
     }
 }
 
+fn redact_text(text: String, secret: Option<&str>) -> String {
+    match secret {
+        Some(secret) if secret.len() >= 4 && text.contains(secret) => {
+            text.replace(secret, "••••••")
+        }
+        _ => text,
+    }
+}
+
+fn redact_output(server: &Server, output: CommandOutput) -> CommandOutput {
+    let secret = lookup_secret(server);
+    CommandOutput {
+        stdout: redact_text(output.stdout, secret.as_deref()),
+        stderr: redact_text(output.stderr, secret.as_deref()),
+        ..output
+    }
+}
+
 /// Execute a remote command and capture stdout/stderr/exit code.
 /// This is the workhorse for health, runbooks and services.
 pub fn run_remote(server: &Server, remote_command: &str) -> Result<CommandOutput> {
@@ -159,10 +185,96 @@ pub fn run_remote(server: &Server, remote_command: &str) -> Result<CommandOutput
         .output()
         .map_err(|e| anyhow!("failed to spawn ssh: {e}"))?;
     let exit_code = output.status.code().unwrap_or(-1);
-    Ok(CommandOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code,
-        success: output.status.success(),
-    })
+    Ok(redact_output(
+        server,
+        CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code,
+            success: output.status.success(),
+        },
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_server(auth_type: &str, key_path: Option<&str>) -> Server {
+        Server {
+            id: "s1".into(),
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            ftp_port: None,
+            rdp_port: None,
+            vnc_port: None,
+            username: "root".into(),
+            protocols: vec!["ssh".into()],
+            auth_type: auth_type.into(),
+            private_key_path: key_path.map(|s| s.to_string()),
+            tags: vec![],
+            group_name: None,
+            environment: "dev".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    fn has_opt(args: &[String], value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+    }
+
+    #[test]
+    fn password_auth_disables_pubkey_so_agent_keys_cant_exhaust_maxauthtries() {
+        let server = test_server("password", None);
+        let mut args = base_opts();
+        push_key_args(&server, &mut args);
+
+        assert!(
+            has_opt(&args, "PubkeyAuthentication=no"),
+            "password auth must disable pubkey auth, otherwise ssh offers every \
+             ssh-agent key first and a busy agent exhausts the remote's \
+             MaxAuthTries (\"Too many authentication failures\") before the \
+             password is ever tried: {args:?}"
+        );
+    }
+
+    #[test]
+    fn key_auth_still_uses_identities_only() {
+        let server = test_server("key", Some("/home/user/.ssh/id_ed25519"));
+        let mut args = base_opts();
+        push_key_args(&server, &mut args);
+
+        assert!(has_opt(&args, "IdentitiesOnly=yes"));
+        assert!(args.iter().any(|a| a == "/home/user/.ssh/id_ed25519"));
+        assert!(!has_opt(&args, "PubkeyAuthentication=no"));
+    }
+
+    #[test]
+    fn redacts_stored_secret_from_captured_output() {
+        let server = test_server("password", None);
+        let output = redact_output(
+            &server,
+            CommandOutput {
+                stdout: "prefix password123 suffix".into(),
+                stderr: "password123".into(),
+                exit_code: 0,
+                success: true,
+            },
+        );
+
+        assert_eq!(output.stdout, "prefix password123 suffix");
+        assert_eq!(output.stderr, "password123");
+
+        let output = CommandOutput {
+            stdout: redact_text("token abcdef token".into(), Some("abcdef")),
+            stderr: redact_text("short abc token".into(), Some("abc")),
+            exit_code: 0,
+            success: true,
+        };
+        assert_eq!(output.stdout, "token •••••• token");
+        assert_eq!(output.stderr, "short abc token");
+    }
 }

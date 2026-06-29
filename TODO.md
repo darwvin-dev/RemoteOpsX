@@ -14,6 +14,7 @@ Status legend: ✅ done (MVP) · 🚧 partial · ⬜ planned
 - ✅ RDP launcher (`xfreerdp`), VNC launcher (system viewer)
 - ✅ Logs panel (tail / journalctl / filter / save / diagnostic bundle)
 - ✅ SSH tunnels (-L / -R / -D), tracked + persisted
+- ✅ Settings store/UI (theme, default ports, health refresh, retention and desktop flags)
 
 ## Next: hardening & depth
 - ⬜ **Native SSH transport** (e.g. `russh`/`libssh2`) to replace the system-`ssh`
@@ -35,10 +36,11 @@ Status legend: ✅ done (MVP) · 🚧 partial · ⬜ planned
 ## Platform & packaging
 - ⬜ pacman package target; signed AppImage; Flatpak.
 - ⬜ CI matrix builds (Arch/Ubuntu/Debian/Fedora).
-- ⬜ Settings store (theme, default ports, refresh interval persistence).
+- ✅ Settings store (theme, default ports, refresh interval persistence).
 
 ## Quality
-- ⬜ Rust unit tests for health parsers (feed fixture `/proc` output).
+- ✅ Rust unit tests for health parsers and threshold warnings.
 - ✅ Frontend regression tests for RunbookRunner state machine and PTY startup ordering.
+- ✅ Frontend regression tests for settings contracts and rollback behavior.
 - ⬜ Live SSH integration test against a reachable Linux test host.
 - ⬜ Secret-masking pass over terminal/log output.

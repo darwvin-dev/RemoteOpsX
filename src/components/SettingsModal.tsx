@@ -1,0 +1,265 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSettingsStore } from "../settingsStore";
+import type { DefaultPorts, Theme, TransferConflictPolicy } from "../settings";
+
+interface Props {
+  onClose: () => void;
+  returnFocus?: HTMLElement | null;
+}
+
+const PORTS: { key: keyof DefaultPorts; label: string }[] = [
+  { key: "ssh", label: "SSH default port" },
+  { key: "ftp", label: "FTP default port" },
+  { key: "rdp", label: "RDP default port" },
+  { key: "vnc", label: "VNC default port" },
+];
+
+type NumericKey = keyof DefaultPorts | "health" | "history" | "lock";
+type NumericDrafts = Record<NumericKey, string>;
+
+const numericDrafts = (settings: ReturnType<typeof useSettingsStore.getState>["settings"]): NumericDrafts => ({
+  ssh: String(settings.default_ports.ssh),
+  ftp: String(settings.default_ports.ftp),
+  rdp: String(settings.default_ports.rdp),
+  vnc: String(settings.default_ports.vnc),
+  health: String(settings.health_refresh_interval_ms / 1000),
+  history: String(settings.history_retention_days),
+  lock: String(settings.app_lock_timeout_minutes),
+});
+
+export function SettingsModal({ onClose, returnFocus }: Props) {
+  const settings = useSettingsStore((state) => state.settings);
+  const loading = useSettingsStore((state) => state.loading);
+  const saving = useSettingsStore((state) => state.saving);
+  const dirty = useSettingsStore((state) => state.dirty);
+  const error = useSettingsStore((state) => state.error);
+  const patch = useSettingsStore((state) => state.patch);
+  const reset = useSettingsStore((state) => state.reset);
+  const save = useSettingsStore((state) => state.save);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  const invokerRef = useRef<HTMLElement | null>(
+    returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null),
+  );
+  const submitInFlightRef = useRef(false);
+  const [drafts, setDrafts] = useState<NumericDrafts>(() => numericDrafts(settings));
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<NumericKey, string>>>({});
+  const draftsDirty = JSON.stringify(drafts) !== JSON.stringify(numericDrafts(settings));
+  const hasUnsavedChanges = dirty || draftsDirty;
+
+  const discardChanges = useCallback(() => {
+    if (saving || loading) return;
+    reset();
+    setDrafts(numericDrafts(useSettingsStore.getState().persisted));
+    setFieldErrors({});
+  }, [loading, reset, saving]);
+
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (hasUnsavedChanges && !window.confirm("Discard your unsaved settings changes?")) return;
+    if (dirty) reset();
+    onClose();
+  }, [dirty, hasUnsavedChanges, onClose, reset, saving]);
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
+
+  useEffect(() => {
+    titleRef.current?.focus();
+    const invoker = invokerRef.current;
+    return () => {
+      if (invoker?.isConnected) invoker.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    setDrafts(numericDrafts(settings));
+  }, [
+    settings.app_lock_timeout_minutes,
+    settings.default_ports.ftp,
+    settings.default_ports.rdp,
+    settings.default_ports.ssh,
+    settings.default_ports.vnc,
+    settings.health_refresh_interval_ms,
+    settings.history_retention_days,
+  ]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        requestCloseRef.current();
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        );
+        if (!focusable?.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  function editNumber(key: NumericKey, value: string) {
+    setDrafts((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => ({ ...current, [key]: undefined }));
+  }
+
+  function commitNumber(key: NumericKey): boolean {
+    const limits: Record<NumericKey, [number, number]> = {
+      ssh: [1, 65_535], ftp: [1, 65_535], rdp: [1, 65_535], vnc: [1, 65_535],
+      health: [1, 60], history: [1, 3650], lock: [1, 1440],
+    };
+    const value = Number(drafts[key]);
+    const [minimum, maximum] = limits[key];
+    if (drafts[key].trim() === "" || !Number.isInteger(value) || value < minimum || value > maximum) {
+      setFieldErrors((current) => ({ ...current, [key]: `Enter a whole number from ${minimum} to ${maximum}.` }));
+      return false;
+    }
+    if (key === "health") patch({ health_refresh_interval_ms: value * 1000 });
+    else if (key === "history") patch({ history_retention_days: value });
+    else if (key === "lock") patch({ app_lock_timeout_minutes: value });
+    else patch({ default_ports: { [key]: value } });
+    setFieldErrors((current) => ({ ...current, [key]: undefined }));
+    return true;
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (loading || saving || submitInFlightRef.current) return;
+    const valid = (["ssh", "ftp", "rdp", "vnc", "health", "history", "lock"] as NumericKey[])
+      .map(commitNumber).every(Boolean);
+    if (!valid || !useSettingsStore.getState().dirty) return;
+    submitInFlightRef.current = true;
+    try {
+      await save();
+      onClose();
+    } catch {
+      // The normalized error is rendered from the settings store.
+    } finally {
+      submitInFlightRef.current = false;
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
+      <form ref={dialogRef} className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onSubmit={submit}>
+        <div className="modal-head">
+          <div>
+            <span className="eyebrow">Application</span>
+            <h2 id="settings-title" ref={titleRef} tabIndex={-1}>Settings</h2>
+          </div>
+          <button type="button" className="ghost tiny" aria-label="Close settings" onClick={requestClose} disabled={saving}>✕</button>
+        </div>
+        <fieldset className="settings-fieldset" disabled={loading || saving}>
+          <div className="modal-body settings-body" aria-busy={loading || saving}>
+          <section className="settings-section" aria-labelledby="appearance-heading">
+            <h3 id="appearance-heading">Appearance</h3>
+            <div>
+              <label htmlFor="settings-theme">Theme</label>
+              <select id="settings-theme" value={settings.theme} onChange={(event) => patch({ theme: event.target.value as Theme })}>
+                <option value="system">Follow system</option>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="connections-heading">
+            <h3 id="connections-heading">Connection defaults</h3>
+            <div className="settings-grid ports-grid">
+              {PORTS.map(({ key, label }) => (
+                <div key={key}>
+                  <label htmlFor={`settings-port-${key}`}>{label}</label>
+                  <input id={`settings-port-${key}`} type="number" min={1} max={65535} step={1} required value={drafts[key]}
+                    aria-invalid={fieldErrors[key] ? "true" : undefined} aria-describedby={fieldErrors[key] ? `settings-${key}-error` : undefined}
+                    onChange={(event) => editNumber(key, event.target.value)} onBlur={() => commitNumber(key)} />
+                  {fieldErrors[key] ? <small id={`settings-${key}-error`} className="field-error">{fieldErrors[key]}</small> : null}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="behavior-heading">
+            <h3 id="behavior-heading">Behavior and retention</h3>
+            <div className="settings-grid">
+              <div>
+                <label htmlFor="settings-health">Health refresh (seconds)</label>
+                <input id="settings-health" type="number" min={1} max={60} step={1} required value={drafts.health}
+                  aria-invalid={fieldErrors.health ? "true" : undefined} aria-describedby={fieldErrors.health ? "settings-health-error" : undefined}
+                  onChange={(event) => editNumber("health", event.target.value)} onBlur={() => commitNumber("health")} />
+                {fieldErrors.health ? <small id="settings-health-error" className="field-error">{fieldErrors.health}</small> : null}
+              </div>
+              <div>
+                <label htmlFor="settings-history">History retention (days)</label>
+                <input id="settings-history" type="number" min={1} max={3650} step={1} required value={drafts.history}
+                  aria-invalid={fieldErrors.history ? "true" : undefined} aria-describedby={fieldErrors.history ? "settings-history-error" : undefined}
+                  onChange={(event) => editNumber("history", event.target.value)} onBlur={() => commitNumber("history")} />
+                {fieldErrors.history ? <small id="settings-history-error" className="field-error">{fieldErrors.history}</small> : null}
+              </div>
+              <div>
+                <label htmlFor="settings-lock">App lock timeout (minutes)</label>
+                <input id="settings-lock" type="number" min={1} max={1440} step={1} required value={drafts.lock}
+                  aria-invalid={fieldErrors.lock ? "true" : undefined} aria-describedby={fieldErrors.lock ? "settings-lock-error" : undefined}
+                  onChange={(event) => editNumber("lock", event.target.value)} onBlur={() => commitNumber("lock")} />
+                {fieldErrors.lock ? <small id="settings-lock-error" className="field-error">{fieldErrors.lock}</small> : null}
+              </div>
+              <div>
+                <label htmlFor="settings-conflict">Transfer conflict policy</label>
+                <select id="settings-conflict" value={settings.transfer_conflict_policy}
+                  onChange={(event) => patch({ transfer_conflict_policy: event.target.value as TransferConflictPolicy })}>
+                  <option value="ask">Ask every time</option>
+                  <option value="overwrite">Overwrite</option>
+                  <option value="rename">Keep both (rename)</option>
+                  <option value="skip">Skip</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="desktop-heading">
+            <h3 id="desktop-heading">Desktop integration</h3>
+            <div className="settings-toggles">
+              <Toggle id="clipboard" label="Clipboard sharing" checked={settings.desktop_clipboard_enabled} onChange={(checked) => patch({ desktop_clipboard_enabled: checked })} />
+              <Toggle id="audio" label="Remote audio" checked={settings.desktop_audio_enabled} onChange={(checked) => patch({ desktop_audio_enabled: checked })} />
+              <Toggle id="notifications" label="Desktop notifications" checked={settings.desktop_notifications_enabled} onChange={(checked) => patch({ desktop_notifications_enabled: checked })} />
+            </div>
+          </section>
+
+          {error ? (
+            <div className="settings-error" role="alert">
+              <strong>{error.message}</strong>
+              <span>Code: <code>{error.code}</code></span>
+              {error.correlationId ? <span>Correlation ID: <code>{error.correlationId}</code></span> : null}
+            </div>
+          ) : null}
+          </div>
+        </fieldset>
+        <div className="modal-foot settings-foot">
+          <button type="button" onClick={requestClose} disabled={saving}>Cancel</button>
+          <button type="button" onClick={discardChanges} disabled={!hasUnsavedChanges || loading || saving}>Discard changes</button>
+          <button type="submit" className="primary" disabled={(!dirty && !draftsDirty) || loading || saving}>{saving ? "Saving…" : "Save settings"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Toggle({ id, label, checked, onChange }: { id: string; label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="settings-toggle" htmlFor={`settings-${id}`}>
+      <span>{label}</span>
+      <input id={`settings-${id}`} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    </label>
+  );
+}

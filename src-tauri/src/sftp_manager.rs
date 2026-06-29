@@ -71,6 +71,12 @@ fn scp_base(server: &Server) -> (String, Vec<String>) {
                 args.push(key.clone());
             }
         }
+    } else if server.auth_type == "password" {
+        // Without this, scp still offers every ssh-agent key before falling
+        // back to password auth, which can exhaust the remote's
+        // MaxAuthTries ("Too many authentication failures") first.
+        args.push("-o".into());
+        args.push("PubkeyAuthentication=no".into());
     }
     if server.auth_type == "password" {
         let mut wrapped = vec!["-e".to_string(), "scp".to_string()];
@@ -141,4 +147,56 @@ fn run_transfer(server: &Server, program: &str, args: &[String]) -> Result<()> {
 /// Minimal single-quote shell escaping for paths.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server(auth_type: &str, key_path: Option<&str>) -> Server {
+        Server {
+            id: "s1".into(),
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            ftp_port: None,
+            rdp_port: None,
+            vnc_port: None,
+            username: "root".into(),
+            protocols: vec!["sftp".into()],
+            auth_type: auth_type.into(),
+            private_key_path: key_path.map(|s| s.to_string()),
+            tags: vec![],
+            group_name: None,
+            environment: "dev".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    fn has_opt(args: &[String], value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+    }
+
+    #[test]
+    fn password_auth_scp_disables_pubkey_so_agent_keys_cant_exhaust_maxauthtries() {
+        let (_program, args) = scp_base(&server("password", None));
+
+        assert!(
+            has_opt(&args, "PubkeyAuthentication=no"),
+            "password-auth scp transfers must disable pubkey auth, otherwise \
+             ssh offers every ssh-agent key first and a busy agent exhausts \
+             the remote's MaxAuthTries before the password is ever tried: {args:?}"
+        );
+    }
+
+    #[test]
+    fn key_auth_scp_still_uses_identities_only() {
+        let (program, args) = scp_base(&server("key", Some("/home/user/.ssh/id_ed25519")));
+
+        assert_eq!(program, "scp");
+        assert!(args.iter().any(|a| a == "/home/user/.ssh/id_ed25519"));
+        assert!(!has_opt(&args, "PubkeyAuthentication=no"));
+    }
 }
