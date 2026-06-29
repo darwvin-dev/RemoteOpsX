@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { startTerminalSession, terminalBackendSessionId } from "./terminalSession";
+import { nextTerminalConnectionAttempt, startTerminalSession, terminalBackendSessionId } from "./terminalSession";
 
 describe("terminal session startup", () => {
   it("registers output and exit listeners before spawning", async () => {
@@ -42,9 +42,17 @@ describe("terminal session startup", () => {
     expect(removeExit).toHaveBeenCalledOnce();
   });
 
-  it("uses a distinct backend session id for each connection generation", () => {
-    expect(terminalBackendSessionId("tab-1", 0)).toBe("tab-1:0");
-    expect(terminalBackendSessionId("tab-1", 1)).toBe("tab-1:1");
-    expect(terminalBackendSessionId("tab-1", 0)).not.toBe(terminalBackendSessionId("tab-1", 1));
+  it("uses a distinct backend session id for each connection attempt", () => {
+    expect(terminalBackendSessionId("tab-1", 0, 1)).toBe("tab-1:0:1");
+    expect(terminalBackendSessionId("tab-1", 0, 2)).toBe("tab-1:0:2");
+    expect(terminalBackendSessionId("tab-1", 1, 3)).toBe("tab-1:1:3");
+    expect(terminalBackendSessionId("tab-1", 0, 1)).not.toBe(terminalBackendSessionId("tab-1", 0, 2));
+  });
+
+  it("allocates monotonically increasing connection attempts", () => {
+    const first = nextTerminalConnectionAttempt();
+    const second = nextTerminalConnectionAttempt();
+
+    expect(second).toBe(first + 1);
   });
 });

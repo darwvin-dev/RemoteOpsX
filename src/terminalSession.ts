@@ -1,7 +1,14 @@
 export type RemoveListener = () => void;
 
-export function terminalBackendSessionId(tabId: string, generation: number): string {
-  return `${tabId}:${generation}`;
+let terminalConnectionAttempt = 0;
+
+export function nextTerminalConnectionAttempt(): number {
+  terminalConnectionAttempt += 1;
+  return terminalConnectionAttempt;
+}
+
+export function terminalBackendSessionId(tabId: string, generation: number, attempt: number): string {
+  return `${tabId}:${generation}:${attempt}`;
 }
 
 interface StartTerminalSessionOptions {

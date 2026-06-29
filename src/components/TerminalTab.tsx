@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { useStore } from "../store";
-import { startTerminalSession, terminalBackendSessionId, type RemoveListener } from "../terminalSession";
+import { nextTerminalConnectionAttempt, startTerminalSession, terminalBackendSessionId, type RemoveListener } from "../terminalSession";
 import type { Server } from "../types";
 
 interface Props {
@@ -32,7 +32,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
     const unlisteners: RemoveListener[] = [];
     let spawned = false;
     let ioErrorShown = false;
-    const backendSessionId = terminalBackendSessionId(tabId, generation);
+    const backendSessionId = terminalBackendSessionId(tabId, generation, nextTerminalConnectionAttempt());
 
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace',
