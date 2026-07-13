@@ -1,45 +1,137 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import * as api from "../api";
-import type { AuthType, Environment, Protocol, Server, ServerInput } from "../types";
+import type { AuthType, Environment, Protocol, Server, ServerInput, SshKeyInfo } from "../types";
 
 interface Props {
   server: Server | null; // null = create new
+  initialFolder?: string;
   onClose: () => void;
 }
 
-const ALL_PROTOCOLS: Protocol[] = ["ssh", "sftp", "rdp", "vnc"];
+const FOLDER_NONE = "__none__";
+const FOLDER_NEW = "__new__";
+
+const ENVIRONMENT_OPTIONS: { value: Environment; label: string; description: string }[] = [
+  { value: "production", label: "Production", description: "Critical systems" },
+  { value: "staging", label: "Staging", description: "Pre-production" },
+  { value: "dev", label: "Dev", description: "Lab and test hosts" },
+];
+
+const AUTH_OPTIONS: { value: AuthType; label: string; description: string }[] = [
+  { value: "key", label: "Private key", description: "Best for daily SSH/SFTP work" },
+  { value: "password", label: "Password", description: "Needed for FTP or password-only hosts" },
+];
+
+const PROTOCOL_OPTIONS: { value: Protocol; label: string; detail: string; icon: string }[] = [
+  { value: "ssh", label: "SSH", detail: "Terminal, health, runbooks", icon: "▰" },
+  { value: "sftp", label: "SFTP", detail: "Encrypted file browser", icon: "⇅" },
+  { value: "ftp", label: "FTP", detail: "Plaintext legacy file access", icon: "⇆" },
+  { value: "rdp", label: "RDP", detail: "Launch FreeRDP", icon: "▣" },
+  { value: "vnc", label: "VNC", detail: "Launch VNC viewer", icon: "◫" },
+];
 
 /** Modal to create / edit a server profile. The secret field is write-only:
  *  it is sent to the keyring on save and never read back into the UI. */
-export function ServerForm({ server, onClose }: Props) {
+export function ServerForm({ server, initialFolder, onClose }: Props) {
+  const servers = useStore((store) => store.servers);
   const loadServers = useStore((s) => s.loadServers);
   const pushAlert = useStore((s) => s.pushAlert);
+  const existingFolders = useMemo(() => {
+    const folders = new Set<string>();
+    for (const profile of servers) {
+      const folder = profile.group_name?.trim();
+      if (folder) folders.add(folder);
+    }
+    return [...folders].sort((left, right) => left.localeCompare(right));
+  }, [servers]);
 
+  const defaultFolder = (server?.group_name ?? initialFolder ?? "").trim();
   const [name, setName] = useState(server?.name ?? "");
   const [host, setHost] = useState(server?.host ?? "");
   const [port, setPort] = useState(server?.port ?? 22);
+  const [ftpPort, setFtpPort] = useState(server?.ftp_port ?? 21);
+  const [rdpPort, setRdpPort] = useState(server?.rdp_port ?? 3389);
+  const [vncPort, setVncPort] = useState(server?.vnc_port ?? 5900);
   const [username, setUsername] = useState(server?.username ?? "");
   const [protocols, setProtocols] = useState<Protocol[]>(server?.protocols ?? ["ssh"]);
   const [authType, setAuthType] = useState<AuthType>(server?.auth_type ?? "key");
   const [keyPath, setKeyPath] = useState(server?.private_key_path ?? "");
+  const [localKeys, setLocalKeys] = useState<SshKeyInfo[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const [installingKey, setInstallingKey] = useState(false);
   const [secret, setSecret] = useState("");
   const [tags, setTags] = useState((server?.tags ?? []).join(", "));
-  const [group, setGroup] = useState(server?.group_name ?? "");
+  const [folderChoice, setFolderChoice] = useState(defaultFolder || FOLDER_NONE);
+  const [folderName, setFolderName] = useState(defaultFolder);
   const [environment, setEnvironment] = useState<Environment>(server?.environment ?? "dev");
   const [notes, setNotes] = useState(server?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function toggleProtocol(p: Protocol) {
-    setProtocols((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingKeys(true);
+    void api.sshKeysList()
+      .then((keys) => {
+        if (!cancelled) setLocalKeys(keys);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalKeys([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingKeys(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const folderOptions = useMemo(() => {
+    if (
+      folderChoice !== FOLDER_NONE &&
+      folderChoice !== FOLDER_NEW &&
+      !existingFolders.includes(folderChoice)
+    ) {
+      return [folderChoice, ...existingFolders];
+    }
+    return existingFolders;
+  }, [existingFolders, folderChoice]);
+
+  function toggleProtocol(protocol: Protocol) {
+    setProtocols((current) => {
+      if (current.includes(protocol)) {
+        return current.filter((enabledProtocol) => enabledProtocol !== protocol);
+      }
+      if (protocol === "ftp") setAuthType("password");
+      return [...current, protocol];
+    });
   }
 
   function applyDefaults(nextAuthType: AuthType) {
     setAuthType(nextAuthType);
-    if (nextAuthType === "password" && !protocols.includes("ssh")) {
-      setProtocols((current) => [...current, "ssh"]);
+    if (nextAuthType === "key") setSecret("");
+  }
+
+  function selectFolder(nextChoice: string) {
+    setFolderChoice(nextChoice);
+    if (nextChoice === FOLDER_NONE) {
+      setFolderName("");
+      return;
     }
+    if (nextChoice === FOLDER_NEW) {
+      setFolderName("");
+      return;
+    }
+    setFolderName(nextChoice);
+  }
+
+  function validatePort(label: string, value: number) {
+    if (!Number.isInteger(Number(value)) || value < 1 || value > 65535) {
+      setError(`${label} must be between 1 and 65535.`);
+      return false;
+    }
+    return true;
   }
 
   async function save() {
@@ -52,17 +144,38 @@ export function ServerForm({ server, onClose }: Props) {
       setError("Pick at least one protocol.");
       return;
     }
+    if (protocols.includes("ftp") && authType !== "password") {
+      setError("FTP requires password authentication because the protocol does not support SSH keys.");
+      return;
+    }
+    if (authType === "password" && !server && !secret.trim()) {
+      setError("Enter the password to store in the OS keyring.");
+      return;
+    }
+    if (folderChoice === FOLDER_NEW && !folderName.trim()) {
+      setError("Enter a folder name or choose No folder.");
+      return;
+    }
+    if (!validatePort("SSH port", Number(port))) return;
+    if (protocols.includes("ftp") && !validatePort("FTP port", Number(ftpPort))) return;
+    if (protocols.includes("rdp") && !validatePort("RDP port", Number(rdpPort))) return;
+    if (protocols.includes("vnc") && !validatePort("VNC port", Number(vncPort))) return;
+
+    const normalizedFolder = folderChoice === FOLDER_NONE ? "" : folderName.trim();
     const input: ServerInput = {
       id: server?.id,
       name: name.trim(),
       host: host.trim(),
       port: Number(port) || 22,
+      ftp_port: protocols.includes("ftp") ? Number(ftpPort) || 21 : null,
+      rdp_port: protocols.includes("rdp") ? Number(rdpPort) || 3389 : null,
+      vnc_port: protocols.includes("vnc") ? Number(vncPort) || 5900 : null,
       username: username.trim(),
       protocols,
       auth_type: authType,
       private_key_path: keyPath.trim() || null,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      group_name: group.trim() || null,
+      group_name: normalizedFolder || null,
       environment,
       notes: notes.trim() || null,
       secret: secret ? secret : null,
@@ -80,9 +193,34 @@ export function ServerForm({ server, onClose }: Props) {
     }
   }
 
+  async function installPublicKey() {
+    setError(null);
+    if (!server) {
+      setError("Save the profile first, then install the public key on the server.");
+      return;
+    }
+    if (!keyPath.trim()) {
+      setError("Choose or enter a private key path first.");
+      return;
+    }
+    setInstallingKey(true);
+    try {
+      const output = await api.sshKeyInstall(server.id, keyPath.trim());
+      if (!output.success) {
+        setError(output.stderr.trim() || output.stdout.trim() || `Key install failed with exit code ${output.exit_code}.`);
+        return;
+      }
+      pushAlert("info", `Installed public key on "${server.name}"`);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setInstallingKey(false);
+    }
+  }
+
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+      <div className="modal wide server-modal">
         <div className="modal-head">
           <div>
             <span className="eyebrow">{server ? "Edit profile" : "New profile"}</span>
@@ -93,68 +231,185 @@ export function ServerForm({ server, onClose }: Props) {
         <div className="modal-body">
           <div className="form-section">
             <span className="section-kicker">Identity</span>
-            <p>Give the host a recognizable name and environment for fast filtering.</p>
-          </div>
-          <div className="form-row three">
-            <div><label>Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="prod-db-1" /></div>
-            <div><label>Group / folder</label><input value={group} onChange={(e) => setGroup(e.target.value)} placeholder="Production" /></div>
-            <div>
-              <label>Environment</label>
-              <select value={environment} onChange={(e) => setEnvironment(e.target.value as Environment)}>
-                <option value="production">production</option>
-                <option value="staging">staging</option>
-                <option value="dev">dev</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-row three">
-            <div><label>Host</label><input value={host} onChange={(e) => setHost(e.target.value)} placeholder="10.0.0.5 / host.example.com" /></div>
-            <div><label>Port</label><input type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} /></div>
-            <div><label>Username</label><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="root" /></div>
-          </div>
-
-          <div className="form-section">
-            <span className="section-kicker">Access</span>
-            <p>Choose every workflow this profile should expose in the sidebar.</p>
-          </div>
-          <div>
-            <label>Protocols</label>
-            <div className="checks protocol-checks">
-              {ALL_PROTOCOLS.map((p) => (
-                <label key={p} className="check">
-                  <input type="checkbox" checked={protocols.includes(p)} onChange={() => toggleProtocol(p)} />
-                  <span>{p.toUpperCase()}</span>
-                </label>
-              ))}
-            </div>
+            <p>Name the host, place it in a folder and mark its environment for safer day-to-day operations.</p>
           </div>
 
           <div className="form-row">
             <div>
-              <label>Auth type</label>
-              <select value={authType} onChange={(e) => applyDefaults(e.target.value as AuthType)}>
-                <option value="key">Private key</option>
-                <option value="password">Password</option>
-              </select>
+              <label>Profile name <span className="required">*</span></label>
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="prod-db-1" />
+              <small className="field-help">The label shown in the sidebar and command palette.</small>
             </div>
             <div>
-              <label>{authType === "key" ? "Secret (key passphrase, optional)" : "Password"}</label>
-              <input
-                type="password"
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={server ? "•••• (unchanged)" : authType === "key" ? "optional" : "stored in OS keyring"}
-              />
+              <label>Folder</label>
+              <div className="folder-picker">
+                <select value={folderChoice} onChange={(event) => selectFolder(event.target.value)}>
+                  <option value={FOLDER_NONE}>No folder</option>
+                  {folderOptions.map((folder) => (
+                    <option key={folder} value={folder}>{folder}</option>
+                  ))}
+                  <option value={FOLDER_NEW}>+ Create new folder</option>
+                </select>
+                {folderChoice === FOLDER_NEW && (
+                  <input
+                    value={folderName}
+                    onChange={(event) => setFolderName(event.target.value)}
+                    placeholder="e.g. Production / EU"
+                    autoFocus
+                  />
+                )}
+              </div>
+              <small className="field-help">Folders are shared by all profiles and appear in the sidebar.</small>
             </div>
           </div>
 
-          {authType === "key" && (
+          <div className="form-row three">
             <div>
-              <label>Private key path</label>
-              <input value={keyPath} onChange={(e) => setKeyPath(e.target.value)} placeholder="~/.ssh/id_ed25519" />
+              <label>Host <span className="required">*</span></label>
+              <input value={host} onChange={(event) => setHost(event.target.value)} placeholder="10.0.0.5 or host.example.com" />
+            </div>
+            <div>
+              <label>Username <span className="required">*</span></label>
+              <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="root" />
+            </div>
+            <div>
+              <label>SSH port</label>
+              <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} />
+            </div>
+          </div>
+
+          <div>
+            <label>Environment</label>
+            <div className="choice-grid three" role="radiogroup" aria-label="Environment">
+              {ENVIRONMENT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`choice-card env-choice env-${option.value}${environment === option.value ? " selected" : ""}`}
+                  onClick={() => setEnvironment(option.value)}
+                  aria-pressed={environment === option.value}
+                >
+                  <span className="choice-mark" />
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-section">
+            <span className="section-kicker">Access</span>
+            <p>Choose every workflow this profile should expose. FTP is only for legacy hosts.</p>
+          </div>
+          <div>
+            <label>Protocols</label>
+            <div className="protocol-grid" role="group" aria-label="Enabled protocols">
+              {PROTOCOL_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`protocol-card ${option.value}${protocols.includes(option.value) ? " selected" : ""}`}
+                  onClick={() => toggleProtocol(option.value)}
+                  aria-pressed={protocols.includes(option.value)}
+                >
+                  <span className="protocol-icon">{option.icon}</span>
+                  <span>
+                    <strong>{option.label}</strong>
+                    <small>{option.detail}</small>
+                  </span>
+                  <span className="choice-mark" />
+                </button>
+              ))}
+            </div>
+            {protocols.includes("ftp") && (
+              <div className="warn-banner" style={{ marginTop: 8 }}>
+                FTP is plaintext and forces password authentication. Prefer SFTP whenever possible.
+              </div>
+            )}
+          </div>
+
+          {(protocols.includes("ftp") || protocols.includes("rdp") || protocols.includes("vnc")) && (
+            <div className="form-row three">
+              {protocols.includes("ftp") && <div><label>FTP port</label><input aria-label="FTP port" type="number" min={1} max={65535} value={ftpPort} onChange={(e) => setFtpPort(Number(e.target.value))} /></div>}
+              {protocols.includes("rdp") && <div><label>RDP port</label><input aria-label="RDP port" type="number" min={1} max={65535} value={rdpPort} onChange={(e) => setRdpPort(Number(e.target.value))} /></div>}
+              {protocols.includes("vnc") && <div><label>VNC port</label><input aria-label="VNC port" type="number" min={1} max={65535} value={vncPort} onChange={(e) => setVncPort(Number(e.target.value))} /></div>}
             </div>
           )}
+
+          <div>
+            <label>Auth type</label>
+            <div className="choice-grid two" role="radiogroup" aria-label="Authentication type">
+              {AUTH_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`choice-card${authType === option.value ? " selected" : ""}`}
+                  onClick={() => applyDefaults(option.value)}
+                  aria-pressed={authType === option.value}
+                >
+                  <span className="choice-mark" />
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {authType === "password" ? (
+            <div>
+              <label>Password</label>
+              <input
+                type="password"
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+                placeholder={server ? "•••• (unchanged)" : "stored in OS keyring"}
+              />
+              <small className="field-help">Saved to the OS keyring. It is never written into SQLite.</small>
+            </div>
+          ) : null}
+
+          <div>
+            <label>{authType === "key" ? "Private key" : "Public key to install"}</label>
+            <div className="key-picker">
+              <select
+                value={localKeys.some((key) => key.path === keyPath) ? keyPath : ""}
+                onChange={(event) => setKeyPath(event.target.value)}
+                disabled={loadingKeys}
+              >
+                <option value="">{loadingKeys ? "Scanning ~/.ssh…" : "Choose from ~/.ssh"}</option>
+                {localKeys.map((key) => (
+                  <option key={key.path} value={key.path}>
+                    {key.name}{key.public_key_path ? "" : " (no .pub file)"}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={keyPath}
+                onChange={(event) => setKeyPath(event.target.value)}
+                placeholder="~/.ssh/id_ed25519"
+              />
+            </div>
+            <small className="field-help">
+              RemoteOpsX never copies private keys to the server. Install adds the matching public key to <code>~/.ssh/authorized_keys</code>.
+            </small>
+            {keyPath && (
+              <div className="key-actions">
+                <button
+                  type="button"
+                  onClick={() => void installPublicKey()}
+                  disabled={installingKey || !server}
+                >
+                  {installingKey ? "Installing…" : "Install public key on server"}
+                </button>
+                {!server && <span className="muted">Save this profile before installing a key.</span>}
+              </div>
+            )}
+            {localKeys.length > 0 && keyPath && (
+              <small className="field-help">
+                {localKeys.find((key) => key.path === keyPath)?.public_key_preview ?? "A .pub file was not found; ssh-keygen will derive the public key if possible."}
+              </small>
+            )}
+          </div>
 
           <div className="form-section">
             <span className="section-kicker">Context</span>
@@ -162,12 +417,12 @@ export function ServerForm({ server, onClose }: Props) {
           </div>
           <div>
             <label>Tags (comma separated)</label>
-            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="db, postgres, eu-west" />
+            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="db, postgres, eu-west" />
           </div>
 
           <div>
             <label>Notes</label>
-            <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Runbooks, contacts, gotchas…" />
+            <textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Runbooks, contacts, gotchas…" />
           </div>
 
           <div className="muted" style={{ fontSize: 11 }}>

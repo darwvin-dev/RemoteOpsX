@@ -23,3 +23,7 @@ src-tauri/gen
 
 # OS
 .DS_Store
+
+graphify-out
+.superpowers/
+.worktrees/

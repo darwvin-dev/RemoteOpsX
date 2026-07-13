@@ -1,20 +1,42 @@
 // Typed wrappers around Tauri commands. One function per backend command so
 // components never touch `invoke` strings directly.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { normalizeRemoteError } from "./errors";
+import { validateSettings } from "./settings";
+import type { AppSettings } from "./settings";
 import type {
+  CommandSnippet,
+  CommandSnippetInput,
   CommandOutput,
   HealthSnapshot,
   RemoteFile,
   Runbook,
   RunbookRun,
   RunbookSpec,
+  SessionRecord,
   RunbookStep,
   Server,
   ServerInput,
+  SshKeyInfo,
   StepResult,
   Tunnel,
 } from "./types";
+
+async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (error) {
+    throw normalizeRemoteError(error);
+  }
+}
+
+// ---- Settings ----
+export const settingsGet = () => invoke<AppSettings>("settings_get");
+export const settingsSave = async (settings: AppSettings) => {
+  validateSettings(settings);
+  return invoke<AppSettings>("settings_save", { settings });
+};
 
 // ---- Servers ----
 export const serversList = () => invoke<Server[]>("servers_list");
@@ -29,6 +51,11 @@ export const ptyWrite = (sessionId: string, data: number[]) => invoke<void>("pty
 export const ptyResize = (sessionId: string, cols: number, rows: number) =>
   invoke<void>("pty_resize", { sessionId, cols, rows });
 export const ptyClose = (sessionId: string) => invoke<void>("pty_close", { sessionId });
+
+// ---- SSH keys ----
+export const sshKeysList = () => invoke<SshKeyInfo[]>("ssh_keys_list");
+export const sshKeyInstall = (serverId: string, privateKeyPath: string) =>
+  invoke<CommandOutput>("ssh_key_install", { serverId, privateKeyPath });
 
 // ---- Health ----
 export const healthCollect = (serverId: string) => invoke<HealthSnapshot>("health_collect", { serverId });
@@ -54,20 +81,25 @@ export const runbookRecordRun = (
 ) => invoke<string>("runbook_record_run", { runbookId, serverId, startedAt, status, results });
 export const runbookRunsList = (limit = 50) => invoke<RunbookRun[]>("runbook_runs_list", { limit });
 
+// ---- Sessions history ----
+export const sessionsList = (limit = 100) => invoke<SessionRecord[]>("sessions_list", { limit });
+
+// ---- Command snippets ----
+export const commandSnippetsList = () => invoke<CommandSnippet[]>("command_snippets_list");
+export const commandSnippetSave = (input: CommandSnippetInput) =>
+  invoke<CommandSnippet>("command_snippet_save", { input });
+export const commandSnippetDelete = (id: string) => invoke<void>("command_snippet_delete", { id });
+
 // ---- Services ----
 export const serviceAction = (serverId: string, action: string, unit: string) =>
   invoke<CommandOutput>("service_action", { serverId, action, unit });
-
-// ---- Docker ----
-export const dockerAction = (serverId: string, action: string, container?: string) =>
-  invoke<CommandOutput>("docker_action", { serverId, action, container: container ?? null });
 
 // ---- SFTP ----
 export const sftpList = (serverId: string, path: string) => invoke<RemoteFile[]>("sftp_list", { serverId, path });
 export const sftpUpload = (serverId: string, localPath: string, remoteDir: string) =>
   invoke<void>("sftp_upload", { serverId, localPath, remoteDir });
-export const sftpDownload = (serverId: string, remotePath: string, localDir: string) =>
-  invoke<void>("sftp_download", { serverId, remotePath, localDir });
+export const sftpDownload = (serverId: string, remotePath: string, localPath: string) =>
+  invoke<void>("sftp_download", { serverId, remotePath, localPath });
 export const sftpDelete = (serverId: string, remotePath: string) => invoke<void>("sftp_delete", { serverId, remotePath });
 export const sftpRename = (serverId: string, from: string, to: string) =>
   invoke<void>("sftp_rename", { serverId, from, to });
@@ -76,8 +108,8 @@ export const sftpRename = (serverId: string, from: string, to: string) =>
 export const ftpList = (serverId: string, path: string) => invoke<RemoteFile[]>("ftp_list", { serverId, path });
 export const ftpUpload = (serverId: string, localPath: string, remoteDir: string) =>
   invoke<void>("ftp_upload", { serverId, localPath, remoteDir });
-export const ftpDownload = (serverId: string, remotePath: string, localDir: string) =>
-  invoke<void>("ftp_download", { serverId, remotePath, localDir });
+export const ftpDownload = (serverId: string, remotePath: string, localPath: string) =>
+  invoke<void>("ftp_download", { serverId, remotePath, localPath });
 export const ftpDelete = (serverId: string, remotePath: string) => invoke<void>("ftp_delete", { serverId, remotePath });
 export const ftpRename = (serverId: string, from: string, to: string) =>
   invoke<void>("ftp_rename", { serverId, from, to });

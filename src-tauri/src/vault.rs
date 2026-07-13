@@ -24,7 +24,8 @@ fn entry(secret_ref: &str) -> Result<Entry> {
 /// Store a secret for the given reference. Overwrites any existing value.
 pub fn set_secret(secret_ref: &str, secret: &str) -> Result<()> {
     let e = entry(secret_ref)?;
-    e.set_password(secret).context("failed to write secret to keyring")?;
+    e.set_password(secret)
+        .context("failed to write secret to keyring")?;
     Ok(())
 }
 

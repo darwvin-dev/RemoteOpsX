@@ -1,0 +1,42 @@
+# Maintainer: RemoteOpsX Maintainers
+pkgname=remoteopsx-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Linux remote operations cockpit for SSH, SFTP, RDP, VNC, health and runbooks"
+arch=('x86_64')
+url="https://github.com/OWNER/remoteopsx"
+license=('MIT')
+depends=(
+  'fuse2'
+  'openssh'
+  'webkit2gtk-4.1'
+  'gtk3'
+  'libayatana-appindicator'
+  'librsvg'
+)
+optdepends=(
+  'sshpass: password authentication for SSH/SFTP'
+  'freerdp: RDP launcher'
+  'tigervnc: VNC launcher'
+  'remmina: alternative VNC launcher'
+  'gnome-keyring: Secret Service keyring backend'
+  'kwallet: KDE keyring backend'
+  'curl: legacy FTP support'
+)
+provides=('remoteopsx')
+conflicts=('remoteopsx')
+options=('!strip')
+source=(
+  "RemoteOpsX-x86_64.AppImage::${url}/releases/download/v${pkgver}/RemoteOpsX-x86_64.AppImage"
+  "remoteopsx.desktop"
+  "remoteopsx.png"
+)
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+  install -Dm755 "${srcdir}/RemoteOpsX-x86_64.AppImage" "${pkgdir}/opt/remoteopsx/remoteopsx.AppImage"
+  install -Dm644 "${srcdir}/remoteopsx.desktop" "${pkgdir}/usr/share/applications/remoteopsx.desktop"
+  install -Dm644 "${srcdir}/remoteopsx.png" "${pkgdir}/usr/share/icons/hicolor/128x128/apps/remoteopsx.png"
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s /opt/remoteopsx/remoteopsx.AppImage "${pkgdir}/usr/bin/remoteopsx"
+}

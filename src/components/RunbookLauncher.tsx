@@ -51,7 +51,7 @@ export function RunbookLauncher({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <label>Search runbooks</label>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="health, disk, docker, voip…" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="health, disk, voip…" />
             </div>
           </div>
 

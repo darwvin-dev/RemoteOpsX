@@ -85,16 +85,16 @@ function StartDashboard({
 }) {
   const productionCount = servers.filter((server) => server.environment === "production").length;
   const protocolCount = new Set(servers.flatMap((server) => server.protocols)).size;
+  const folderCount = new Set(servers.map((server) => server.group_name?.trim()).filter(Boolean)).size;
 
   return (
     <div className="start-dashboard">
       <section className="hero-card">
         <div className="hero-copy">
-          <span className="eyebrow">Linux remote operations</span>
-          <h1>Command every host from one calm cockpit.</h1>
+          <span className="eyebrow">Workspace</span>
+          <h1>Remote operations, organized.</h1>
           <p>
-            Open SSH/SFTP/FTP/RDP/VNC, stream live health, inspect services, collect logs and run safe
-            automation without leaving the workspace.
+            Connect to servers, inspect health, browse files, review logs and run controlled diagnostics.
           </p>
           <div className="hero-actions">
             <button className="primary" onClick={focusedServer ? () => onOpenTab("ssh", focusedServer) : onNewServer}>
@@ -103,15 +103,6 @@ function StartDashboard({
             <button onClick={onOpenRunbooks}>Run diagnostics</button>
             <button className="ghost" onClick={onOpenTunnels}>Tunnels</button>
           </div>
-        </div>
-        <div className="hero-visual" aria-hidden="true">
-          <div className="orbit one" />
-          <div className="orbit two" />
-          <div className="ops-node center">RX</div>
-          <div className="ops-node n1">SSH</div>
-          <div className="ops-node n2">SFTP</div>
-          <div className="ops-node n3">RDP</div>
-          <div className="ops-node n4">VNC</div>
         </div>
       </section>
 
@@ -122,9 +113,14 @@ function StartDashboard({
           <small>{productionCount} production targets</small>
         </div>
         <div className="insight-card">
+          <span className="insight-value">{folderCount}</span>
+          <span className="insight-label">Folders</span>
+          <small>Group hosts by team, customer or environment</small>
+        </div>
+        <div className="insight-card">
           <span className="insight-value">{protocolCount}</span>
-          <span className="insight-label">Protocols enabled</span>
-          <small>SSH, SFTP/FTP files, desktops and logs</small>
+          <span className="insight-label">Protocols</span>
+          <small>SSH, files, desktops and logs</small>
         </div>
         <div className="insight-card">
           <span className="insight-value">2–5s</span>
@@ -159,13 +155,11 @@ function StartDashboard({
         </div>
 
         <div className="quick-card">
-          <span className="eyebrow">Keyboard flow</span>
-          <h3>Jump anywhere fast</h3>
-          <p>Use the command palette for servers, panels, tabs, runbooks and workspace actions.</p>
+          <span className="eyebrow">Command palette</span>
+          <h3>Jump to actions</h3>
+          <p>Search servers, panels, tabs and runbooks from one entry point.</p>
           <div className="shortcut-row">
             <kbd>Ctrl</kbd><kbd>K</kbd>
-            <span>or</span>
-            <kbd>⌘</kbd><kbd>K</kbd>
           </div>
         </div>
 

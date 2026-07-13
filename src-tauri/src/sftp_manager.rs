@@ -29,7 +29,10 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
             continue;
         }
         // perms links owner group size epoch name...
-        let cols: Vec<&str> = line.splitn(7, char::is_whitespace).filter(|s| !s.is_empty()).collect();
+        let cols: Vec<&str> = line
+            .splitn(7, char::is_whitespace)
+            .filter(|s| !s.is_empty())
+            .collect();
         if cols.len() < 7 {
             continue;
         }
@@ -45,7 +48,11 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
             name,
         });
     }
-    files.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    files.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     Ok(files)
 }
 
@@ -64,6 +71,12 @@ fn scp_base(server: &Server) -> (String, Vec<String>) {
                 args.push(key.clone());
             }
         }
+    } else if server.auth_type == "password" {
+        // Without this, scp still offers every ssh-agent key before falling
+        // back to password auth, which can exhaust the remote's
+        // MaxAuthTries ("Too many authentication failures") first.
+        args.push("-o".into());
+        args.push("PubkeyAuthentication=no".into());
     }
     if server.auth_type == "password" {
         let mut wrapped = vec!["-e".to_string(), "scp".to_string()];
@@ -78,15 +91,21 @@ fn scp_base(server: &Server) -> (String, Vec<String>) {
 pub fn upload(server: &Server, local_path: &str, remote_dir: &str) -> Result<()> {
     let (program, mut args) = scp_base(server);
     args.push(local_path.to_string());
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_dir));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_dir
+    ));
     run_transfer(server, &program, &args)
 }
 
 /// Download a remote file to a local directory.
-pub fn download(server: &Server, remote_path: &str, local_dir: &str) -> Result<()> {
+pub fn download(server: &Server, remote_path: &str, local_path: &str) -> Result<()> {
     let (program, mut args) = scp_base(server);
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_path));
-    args.push(local_dir.to_string());
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_path
+    ));
+    args.push(local_path.to_string());
     run_transfer(server, &program, &args)
 }
 
@@ -100,7 +119,10 @@ pub fn delete(server: &Server, remote_path: &str) -> Result<()> {
 }
 
 pub fn rename(server: &Server, from: &str, to: &str) -> Result<()> {
-    let out = ssh_manager::run_remote(server, &format!("mv {} {}", shell_quote(from), shell_quote(to)))?;
+    let out = ssh_manager::run_remote(
+        server,
+        &format!("mv {} {}", shell_quote(from), shell_quote(to)),
+    )?;
     if out.success {
         Ok(())
     } else {
@@ -112,7 +134,9 @@ fn run_transfer(server: &Server, program: &str, args: &[String]) -> Result<()> {
     let mut cmd = Command::new(program);
     cmd.args(args);
     ssh_manager::apply_password_env(&mut cmd, server);
-    let out = cmd.output().map_err(|e| anyhow!("failed to run {program}: {e}"))?;
+    let out = cmd
+        .output()
+        .map_err(|e| anyhow!("failed to run {program}: {e}"))?;
     if out.status.success() {
         Ok(())
     } else {
@@ -123,4 +147,56 @@ fn run_transfer(server: &Server, program: &str, args: &[String]) -> Result<()> {
 /// Minimal single-quote shell escaping for paths.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server(auth_type: &str, key_path: Option<&str>) -> Server {
+        Server {
+            id: "s1".into(),
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            ftp_port: None,
+            rdp_port: None,
+            vnc_port: None,
+            username: "root".into(),
+            protocols: vec!["sftp".into()],
+            auth_type: auth_type.into(),
+            private_key_path: key_path.map(|s| s.to_string()),
+            tags: vec![],
+            group_name: None,
+            environment: "dev".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    fn has_opt(args: &[String], value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+    }
+
+    #[test]
+    fn password_auth_scp_disables_pubkey_so_agent_keys_cant_exhaust_maxauthtries() {
+        let (_program, args) = scp_base(&server("password", None));
+
+        assert!(
+            has_opt(&args, "PubkeyAuthentication=no"),
+            "password-auth scp transfers must disable pubkey auth, otherwise \
+             ssh offers every ssh-agent key first and a busy agent exhausts \
+             the remote's MaxAuthTries before the password is ever tried: {args:?}"
+        );
+    }
+
+    #[test]
+    fn key_auth_scp_still_uses_identities_only() {
+        let (program, args) = scp_base(&server("key", Some("/home/user/.ssh/id_ed25519")));
+
+        assert_eq!(program, "scp");
+        assert!(args.iter().any(|a| a == "/home/user/.ssh/id_ed25519"));
+        assert!(!has_opt(&args, "PubkeyAuthentication=no"));
+    }
 }

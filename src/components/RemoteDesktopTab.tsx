@@ -3,7 +3,7 @@ import * as api from "../api";
 import { useStore } from "../store";
 import type { Server } from "../types";
 
-/** RDP / VNC launcher tab. MVP launches the external system client
+/** RDP / VNC launcher tab. Launches the external system client
  *  (xfreerdp / vncviewer) while the session record stays in RemoteOpsX.
  *  The adapter is structured so an embedded canvas can replace this later. */
 export function RemoteDesktopTab({ kind, server }: { kind: "rdp" | "vnc"; server: Server }) {
@@ -12,8 +12,7 @@ export function RemoteDesktopTab({ kind, server }: { kind: "rdp" | "vnc"; server
   const [resolution, setResolution] = useState("1600x900");
   const [launched, setLaunched] = useState(false);
 
-  const defaultPort = kind === "rdp" ? 3389 : 5900;
-  const port = server.port === 22 ? defaultPort : server.port;
+  const port = kind === "rdp" ? (server.rdp_port ?? 3389) : (server.vnc_port ?? 5900);
 
   async function launch() {
     try {
@@ -63,7 +62,7 @@ export function RemoteDesktopTab({ kind, server }: { kind: "rdp" | "vnc"; server
       </div>
 
       <p className="muted" style={{ marginTop: 14, maxWidth: 520 }}>
-        MVP launches the system {kind === "rdp" ? "FreeRDP" : "VNC"} client as a separate window. Ensure{" "}
+        RemoteOpsX launches the system {kind === "rdp" ? "FreeRDP" : "VNC"} client as a separate window. Ensure{" "}
         <span className="mono">{kind === "rdp" ? "xfreerdp / xfreerdp3" : "a VNC viewer (tigervnc, remmina…)"}</span>{" "}
         is installed. Embedded {kind.toUpperCase()} rendering is on the roadmap.
       </p>

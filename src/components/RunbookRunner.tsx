@@ -1,113 +1,98 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api";
 import { useStore } from "../store";
-import type { RunbookSpec, RunbookStep, Server, StepResult } from "../types";
+import {
+  confirmStep,
+  createRun,
+  nextAction,
+  recordResult,
+  skipStep,
+  type RunState,
+} from "../runbookMachine";
+import type { RunbookSpec, Server, StepResult } from "../types";
 
-interface StepView extends RunbookStep {
-  // resolved command after variable substitution
-  resolved: string;
-  state: "pending" | "running" | "success" | "failure" | "skipped";
-  result?: StepResult;
-  expanded: boolean;
-}
-
-/** Runbook execution view: preview steps, confirm destructive ones, run them
- *  one-by-one over SSH, capture per-step output and persist the run. */
+/** Executes one durable frontend run state across confirmation boundaries. */
 export function RunbookRunner({ runbookId, server }: { runbookId: string; server: Server }) {
-  const pushAlert = useStore((s) => s.pushAlert);
+  const pushAlert = useStore((state) => state.pushAlert);
   const [spec, setSpec] = useState<RunbookSpec | null>(null);
   const [vars, setVars] = useState<Record<string, string>>({});
-  const [steps, setSteps] = useState<StepView[]>([]);
-  const [running, setRunning] = useState(false);
-  const [confirmIdx, setConfirmIdx] = useState<number | null>(null);
-  const [done, setDone] = useState(false);
-  const completedSteps = steps.filter((step) => step.state === "success" || step.state === "failure" || step.state === "skipped").length;
-  const progressPct = steps.length ? (completedSteps / steps.length) * 100 : 0;
+  const [run, setRun] = useState<RunState | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const recordedRun = useRef<string | null>(null);
 
   useEffect(() => {
-    void api.runbookSpec(runbookId).then((sp) => {
-      setSpec(sp);
-      setVars(sp.variables ?? {});
-      resetSteps(sp, sp.variables ?? {});
-    }).catch((err) => pushAlert("error", `load runbook: ${err}`));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runbookId]);
+    let cancelled = false;
+    void api.runbookSpec(runbookId).then((loaded) => {
+      if (cancelled) return;
+      setSpec(loaded);
+      setVars(loaded.variables ?? {});
+      setRun(null);
+    }).catch((error) => pushAlert("error", `load runbook: ${error}`));
+    return () => { cancelled = true; };
+  }, [pushAlert, runbookId]);
 
-  function substitute(cmd: string, v: Record<string, string>): string {
-    return cmd.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => v[k] ?? `{{${k}}}`);
-  }
+  useEffect(() => {
+    if (!run || run.phase !== "running") return;
+    const advanced = nextAction(run);
+    setRun(advanced.state);
+  }, [run]);
 
-  function resetSteps(sp: RunbookSpec, v: Record<string, string>) {
-    setSteps(sp.steps.map((s) => ({
-      ...s,
-      resolved: substitute(s.command, v),
-      state: "pending",
-      expanded: false,
-    })));
-    setDone(false);
-  }
+  useEffect(() => {
+    if (!run || run.phase !== "executing") return;
+    const step = run.steps[run.cursor];
+    if (!step) return;
+    let cancelled = false;
+    void api.runbookRunStep(server.id, step).then((result) => {
+      if (!cancelled) setRun((current) => current ? recordResult(current, result) : current);
+    }).catch((error) => {
+      if (cancelled) return;
+      const result: StepResult = {
+        name: step.name,
+        command: step.command,
+        stdout: "",
+        stderr: String(error),
+        exit_code: -1,
+        status: "failure",
+      };
+      setRun((current) => current ? recordResult(current, result) : current);
+    });
+    return () => { cancelled = true; };
+  }, [run, server.id]);
 
-  function setStep(i: number, patch: Partial<StepView>) {
-    setSteps((cur) => cur.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-  }
+  useEffect(() => {
+    if (!run || run.phase !== "complete" || recordedRun.current === run.startedAt) return;
+    recordedRun.current = run.startedAt;
+    void api.runbookRecordRun(runbookId, server.id, run.startedAt, run.overall, run.results)
+      .then(() => pushAlert(
+        run.overall === "success" ? "info" : "warn",
+        `Runbook "${spec?.name}" finished: ${run.overall}`,
+        server.id,
+      ))
+      .catch((error) => pushAlert("error", `record run: ${error}`));
+  }, [pushAlert, run, runbookId, server.id, spec?.name]);
 
-  // Execute steps sequentially, pausing at confirmation gates.
-  async function runFrom(startIdx: number) {
-    setRunning(true);
-    const startedAt = new Date().toISOString();
-    const collected: StepResult[] = [];
-    let overall: "success" | "failure" = "success";
-
-    for (let i = startIdx; i < steps.length; i++) {
-      const step = steps[i];
-      if (step.requires_confirmation && i !== startIdx - 1) {
-        // gate: stop and ask for confirmation, unless we just confirmed this one
-        if (confirmIdx !== i) {
-          setConfirmIdx(i);
-          setRunning(false);
-          return; // resumes when user confirms
-        }
-      }
-      setStep(i, { state: "running", expanded: true });
-      const resolved = substitute(step.command, vars);
-      try {
-        const res = await api.runbookRunStep(server.id, { ...step, command: resolved });
-        collected.push(res);
-        setStep(i, { state: res.status, result: res });
-        if (res.status === "failure") overall = "failure";
-      } catch (err) {
-        const res: StepResult = {
-          name: step.name, command: resolved, stdout: "", stderr: String(err), exit_code: -1, status: "failure",
-        };
-        collected.push(res);
-        setStep(i, { state: "failure", result: res });
-        overall = "failure";
-      }
-      setConfirmIdx(null);
-    }
-
-    setRunning(false);
-    setDone(true);
-    try {
-      await api.runbookRecordRun(runbookId, server.id, startedAt, overall, collected);
-      pushAlert(overall === "success" ? "info" : "warn", `Runbook "${spec?.name}" finished: ${overall}`, server.id);
-    } catch (err) {
-      pushAlert("error", `record run: ${err}`);
-    }
-  }
+  const previewSteps = useMemo(
+    () => spec ? createRun(spec.steps, vars, "preview").steps : [],
+    [spec, vars],
+  );
+  const steps = run?.steps ?? previewSteps;
+  const completedSteps = steps.filter((step) => ["success", "failure", "skipped"].includes(step.state)).length;
+  const progressPct = steps.length ? (completedSteps / steps.length) * 100 : 0;
+  const active = run?.phase === "running" || run?.phase === "executing";
 
   function start() {
-    if (spec) resetSteps(spec, vars);
-    // allow state to flush before running
-    setTimeout(() => void runFrom(0), 0);
+    if (!spec) return;
+    recordedRun.current = null;
+    setExpanded(new Set());
+    setRun(createRun(spec.steps, vars));
   }
 
-  function confirmAndContinue() {
-    const i = confirmIdx;
-    if (i === null) return;
-    // Mark as confirmed by setting confirmIdx to i then resuming from i.
-    setConfirmIdx(i);
-    setTimeout(() => void runFrom(i), 0);
+  function toggleExpanded(index: number) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
   }
 
   if (!spec) return <div className="panel-hint">Loading runbook…</div>;
@@ -119,68 +104,68 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
           <h2>{spec.name}</h2>
           <p>{spec.description} · target <span className="mono">{server.name}</span></p>
         </div>
-        <div className="flex">
-          <button className="primary" disabled={running} onClick={start}>
-            {running ? "Running…" : done ? "Run again" : "Run runbook"}
-          </button>
-        </div>
+        <button className="primary" disabled={active} onClick={start}>
+          {active ? "Running…" : run?.phase === "complete" ? "Run again" : "Run runbook"}
+        </button>
       </div>
 
       <div className="run-progress">
         <div>
           <strong>{completedSteps}/{steps.length}</strong>
-          <span>{running ? "Running steps" : done ? "Run complete" : "Ready to execute"}</span>
+          <span>{active ? "Running steps" : run?.phase === "complete" ? "Run complete" : "Ready to execute"}</span>
         </div>
-        <div className="progress-track">
-          <span style={{ width: `${progressPct}%` }} />
-        </div>
+        <div className="progress-track"><span style={{ width: `${progressPct}%` }} /></div>
       </div>
 
       {Object.keys(vars).length > 0 && (
         <div className="metric-card" style={{ marginBottom: 12 }}>
           <div className="mc-label">Variables</div>
           <div className="form-row" style={{ marginTop: 6 }}>
-            {Object.entries(vars).map(([k, v]) => (
-              <div key={k}>
-                <label>{k}</label>
-                <input value={v} onChange={(e) => setVars((cur) => ({ ...cur, [k]: e.target.value }))} />
+            {Object.entries(vars).map(([key, value]) => (
+              <div key={key}>
+                <label>{key}</label>
+                <input disabled={active} value={value} onChange={(event) => setVars((current) => ({ ...current, [key]: event.target.value }))} />
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {steps.map((s, i) => (
-        <div key={i} className={`step ${s.state}`}>
-          <div className="step-head" onClick={() => setStep(i, { expanded: !s.expanded })}>
-            <span className="step-idx">
-              {s.state === "success" ? "✓" : s.state === "failure" ? "✕" : s.state === "running" ? "•" : i + 1}
-            </span>
-            <span className="step-name">
-              {s.name}
-              {s.requires_confirmation && <span className="pill" style={{ marginLeft: 8 }}>confirm</span>}
-            </span>
-            <span className="step-cmd">{s.resolved}</span>
-          </div>
+      {steps.map((step, index) => {
+        const isExpanded = expanded.has(index) || step.state === "running";
+        const needsConfirmation = run?.pendingConfirmation === index;
+        return (
+          <div key={`${index}-${step.name}`} className={`step ${step.state}`}>
+            <button className="step-head" onClick={() => toggleExpanded(index)}>
+              <span className="step-idx">
+                {step.state === "success" ? "✓" : step.state === "failure" ? "✕" : step.state === "skipped" ? "–" : step.state === "running" ? "•" : index + 1}
+              </span>
+              <span className="step-name">
+                {step.name}
+                {step.requires_confirmation && <span className="pill" style={{ marginLeft: 8 }}>confirm</span>}
+              </span>
+              <span className="step-cmd">{step.command}</span>
+            </button>
 
-          {confirmIdx === i && (
-            <div className="confirm-box">
-              This step requires confirmation. It will run:
-              <div className="cmd-preview">{s.resolved}</div>
-              <div className="flex" style={{ justifyContent: "flex-end" }}>
-                <button className="tiny" onClick={() => { setConfirmIdx(null); setStep(i, { state: "skipped" }); }}>Skip</button>
-                <button className="tiny primary" onClick={confirmAndContinue}>Confirm & run</button>
+            {needsConfirmation && run && (
+              <div className="confirm-box">
+                This step requires confirmation. It will run:
+                <div className="cmd-preview">{step.command}</div>
+                <div className="flex" style={{ justifyContent: "flex-end" }}>
+                  <button className="tiny" onClick={() => setRun(skipStep(run))}>Skip</button>
+                  <button className="tiny primary" onClick={() => setRun(confirmStep(run))}>Confirm & run</button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {s.expanded && s.result && (
-            <div className="step-body">
-              <pre>{s.result.stdout || ""}{s.result.stderr ? `\n\x1b[stderr]\n${s.result.stderr}` : ""}{`\n— exit ${s.result.exit_code}`}</pre>
-            </div>
-          )}
-        </div>
-      ))}
+            {isExpanded && step.result && (
+              <div className="step-body">
+                <pre>{step.result.stdout}{step.result.stderr ? `\n[stderr]\n${step.result.stderr}` : ""}{`\n— exit ${step.result.exit_code}`}</pre>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

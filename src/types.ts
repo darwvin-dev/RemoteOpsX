@@ -9,6 +9,9 @@ export interface Server {
   name: string;
   host: string;
   port: number;
+  ftp_port?: number | null;
+  rdp_port?: number | null;
+  vnc_port?: number | null;
   username: string;
   protocols: Protocol[];
   auth_type: AuthType;
@@ -26,6 +29,9 @@ export interface ServerInput {
   name: string;
   host: string;
   port: number;
+  ftp_port?: number | null;
+  rdp_port?: number | null;
+  vnc_port?: number | null;
   username: string;
   protocols: Protocol[];
   auth_type: AuthType;
@@ -59,14 +65,6 @@ export interface ProcInfo {
   mem: number;
 }
 
-export interface DockerContainer {
-  name: string;
-  status: string;
-  image: string;
-  cpu_percent?: number | null;
-  mem_percent?: number | null;
-}
-
 export interface HealthSnapshot {
   os_name: string;
   kernel: string;
@@ -89,8 +87,6 @@ export interface HealthSnapshot {
   top_mem: ProcInfo[];
   listening_ports: string[];
   failed_services: string[];
-  docker: DockerContainer[];
-  docker_available: boolean;
   warnings: string[];
 }
 
@@ -126,7 +122,7 @@ export interface StepResult {
   stdout: string;
   stderr: string;
   exit_code: number;
-  status: "success" | "failure";
+  status: "success" | "failure" | "skipped";
 }
 
 export interface RunbookRun {
@@ -137,6 +133,38 @@ export interface RunbookRun {
   ended_at?: string | null;
   status: string;
   results: StepResult[];
+}
+
+export interface SessionRecord {
+  id: string;
+  server_id: string;
+  protocol: string;
+  started_at: string;
+  ended_at?: string | null;
+  status: string;
+}
+
+export interface CommandSnippet {
+  id: string;
+  label: string;
+  command: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommandSnippetInput {
+  id?: string | null;
+  label: string;
+  command: string;
+  tags: string[];
+}
+
+export interface SshKeyInfo {
+  name: string;
+  path: string;
+  public_key_path?: string | null;
+  public_key_preview?: string | null;
 }
 
 export interface Tunnel {
@@ -171,5 +199,5 @@ export interface Tab {
   runbookId?: string;
 }
 
-export type RightPanelView = "health" | "services" | "docker" | "notes" | "snippets";
-export type BottomPanelView = "output" | "history" | "alerts";
+export type RightPanelView = "health" | "services" | "notes" | "snippets";
+export type BottomPanelView = "output" | "history" | "sessions" | "alerts";

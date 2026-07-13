@@ -6,14 +6,15 @@ Status legend: ✅ done (MVP) · 🚧 partial · ⬜ planned
 - ✅ Server Manager (CRUD, groups, tags, environments, search) in SQLite
 - ✅ Secrets in OS keyring (Secret Service); no plaintext in SQLite
 - ✅ SSH terminal tabs (xterm.js + server-side PTY over system `ssh`), reconnect/resize
-- ✅ Live agentless Health panel (CPU/RAM/swap/disk/load/uptime/net, top procs, ports, failed services, Docker) with thresholds + sparklines
-- ✅ Runbook engine + 7 built-ins, step-by-step run with confirmation + persisted history
+- ✅ Live agentless Health panel (CPU/RAM/swap/disk/load/uptime/net, top procs, ports, failed services) with thresholds + sparklines
+- ✅ Runbook engine + 6 built-ins, step-by-step run with confirmation + persisted history
 - ✅ Services panel (failed units, status/logs, confirmed start/stop/restart)
-- ✅ Docker panel (list/stats/logs/lifecycle, compose ps)
 - ✅ SFTP browser (list/upload/download/delete/rename)
+- ✅ Legacy FTP browser via curl, with independent port and plaintext warning
 - ✅ RDP launcher (`xfreerdp`), VNC launcher (system viewer)
 - ✅ Logs panel (tail / journalctl / filter / save / diagnostic bundle)
 - ✅ SSH tunnels (-L / -R / -D), tracked + persisted
+- ✅ Settings store/UI (theme, default ports, health refresh, retention and desktop flags)
 
 ## Next: hardening & depth
 - ⬜ **Native SSH transport** (e.g. `russh`/`libssh2`) to replace the system-`ssh`
@@ -35,10 +36,11 @@ Status legend: ✅ done (MVP) · 🚧 partial · ⬜ planned
 ## Platform & packaging
 - ⬜ pacman package target; signed AppImage; Flatpak.
 - ⬜ CI matrix builds (Arch/Ubuntu/Debian/Fedora).
-- ⬜ Settings store (theme, default ports, refresh interval persistence).
+- ✅ Settings store (theme, default ports, refresh interval persistence).
 
 ## Quality
-- ⬜ Rust unit tests for health parsers (feed fixture `/proc` output).
-- ⬜ Frontend component tests for RunbookRunner state machine.
-- ⬜ Integration test against a throwaway SSH container.
+- ✅ Rust unit tests for health parsers and threshold warnings.
+- ✅ Frontend regression tests for RunbookRunner state machine and PTY startup ordering.
+- ✅ Frontend regression tests for settings contracts and rollback behavior.
+- ⬜ Live SSH integration test against a reachable Linux test host.
 - ⬜ Secret-masking pass over terminal/log output.

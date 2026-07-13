@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RemoteOpsX
+GenericName=Remote Operations Workspace
+Comment=Linux remote operations cockpit for SSH, SFTP, RDP, VNC, health and runbooks
+Exec=remoteopsx
+Icon=remoteopsx
+Categories=Development;Network;RemoteAccess;
+Terminal=false
+StartupNotify=true

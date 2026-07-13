@@ -8,6 +8,7 @@ interface Props {
   onNewServer: () => void;
   onOpenRunbooks: () => void;
   onOpenTunnels: () => void;
+  onOpenSettings: () => void;
 }
 
 interface PaletteAction {
@@ -19,16 +20,17 @@ interface PaletteAction {
   run: () => void;
 }
 
-const SERVER_ACTIONS: { kind: TabKind; label: string; requiresProtocol?: "ssh" | "sftp" | "rdp" | "vnc" }[] = [
+const SERVER_ACTIONS: { kind: TabKind; label: string; requiresProtocol?: "ssh" | "sftp" | "ftp" | "rdp" | "vnc" }[] = [
   { kind: "ssh", label: "Open SSH", requiresProtocol: "ssh" },
   { kind: "sftp", label: "Open SFTP", requiresProtocol: "sftp" },
+  { kind: "ftp", label: "Open FTP", requiresProtocol: "ftp" },
   { kind: "logs", label: "Open Logs" },
   { kind: "rdp", label: "Launch RDP", requiresProtocol: "rdp" },
   { kind: "vnc", label: "Launch VNC", requiresProtocol: "vnc" },
 ];
 
 /** Keyboard-first command palette for jumping across servers and common actions. */
-export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onOpenTunnels }: Props) {
+export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onOpenTunnels, onOpenSettings }: Props) {
   const servers = useStore((s) => s.servers);
   const tabs = useStore((s) => s.tabs);
   const activeTabId = useStore((s) => s.activeTabId);
@@ -49,6 +51,14 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
     };
 
     const globalActions: PaletteAction[] = [
+      {
+        id: "settings",
+        title: "Open application settings",
+        eyebrow: "Application",
+        detail: "Configure appearance, connections, retention and desktop integration",
+        keywords: "settings preferences configuration theme ports",
+        run: closeThen(onOpenSettings),
+      },
       {
         id: "new-server",
         title: "Add server profile",
@@ -90,6 +100,14 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
         run: closeThen(() => setBottomPanel("history")),
       },
       {
+        id: "sessions",
+        title: "Show SSH session history",
+        eyebrow: "Bottom panel",
+        detail: "Review opened and closed terminal sessions",
+        keywords: "history ssh sessions terminal bottom",
+        run: closeThen(() => setBottomPanel("sessions")),
+      },
+      {
         id: "toggle-bottom",
         title: "Toggle bottom dock",
         eyebrow: "Layout",
@@ -99,12 +117,12 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
       },
     ];
 
-    const panelActions: PaletteAction[] = (["health", "services", "docker", "notes", "snippets"] as RightPanelView[]).map((view) => ({
+    const panelActions: PaletteAction[] = (["health", "services", "notes", "snippets"] as RightPanelView[]).map((view) => ({
       id: `panel-${view}`,
       title: `Focus ${view} panel`,
       eyebrow: "Right panel",
       detail: "Switch the operations side panel",
-      keywords: `${view} right panel metrics services docker notes snippets`,
+      keywords: `${view} right panel metrics services notes snippets`,
       run: closeThen(() => setRightPanel(view)),
     }));
 
@@ -143,6 +161,7 @@ export function CommandPalette({ open, onClose, onNewServer, onOpenRunbooks, onO
     onNewServer,
     onOpenRunbooks,
     onOpenTunnels,
+    onOpenSettings,
     openTab,
     servers,
     setActiveTab,
@@ -263,11 +282,12 @@ function serverKeywords(server: Server): string {
 function iconFor(action: PaletteAction): string {
   if (action.id.startsWith("ssh-")) return "▰";
   if (action.id.startsWith("sftp-")) return "⇅";
+  if (action.id.startsWith("ftp-")) return "⇅";
   if (action.id.startsWith("rdp-") || action.id.startsWith("vnc-")) return "▣";
   if (action.id.startsWith("focus-")) return "◉";
   if (action.id.startsWith("panel-")) return "◧";
   if (action.id.startsWith("tab-")) return "▱";
   if (action.id === "runbooks") return "▶";
   if (action.id === "tunnels") return "⇄";
-  return "⌘";
+  return "⌁";
 }
