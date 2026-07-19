@@ -435,6 +435,7 @@ button.status-chip { box-shadow: none; }
 }
 
 .server-item.active::before { background: var(--accent); }
+.server-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .server-item .si-top { display: flex; align-items: center; gap: 8px; }
 .server-item .si-name { font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .server-item .si-host { font-size: 11px; color: var(--text-2); font-family: var(--mono); }
@@ -486,29 +487,44 @@ button.status-chip { box-shadow: none; }
   min-height: 42px;
 }
 
-.tab {
+.tab-shell {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
   border-right: 1px solid var(--border);
-  cursor: pointer;
   color: var(--text-1);
   white-space: nowrap;
   font-size: 12px;
   max-width: 260px;
   min-width: 124px;
 }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px 0 12px;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
 
-.tab:hover { background: rgba(255, 255, 255, 0.035); }
-.tab.active {
+.tab-shell:hover { background: rgba(255, 255, 255, 0.035); }
+.tab-shell.active {
   background: var(--bg-0);
   color: var(--text-0);
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 .tab .tab-kind { font-size: 9px; font-weight: 800; text-transform: uppercase; color: var(--text-2); }
-.tab .tab-close { color: var(--text-2); border-radius: 5px; padding: 1px 5px; margin-left: auto; }
-.tab .tab-close:hover { background: var(--danger-surface); color: var(--danger-text); }
+.tab-title { overflow: hidden; text-overflow: ellipsis; }
+.tab-close { color: var(--text-2); border: 0; background: transparent; border-radius: 5px; padding: 3px 6px; margin-right: 5px; box-shadow: none; }
+.tab-close:hover { background: var(--danger-surface); color: var(--danger-text); }
+.tab-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tab-content { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .tab-pane { position: absolute; inset: 0; display: flex; flex-direction: column; }
 
@@ -1041,6 +1057,10 @@ table.data tr:hover td { background: rgba(255, 255, 255, 0.035); }
 .file-row:hover { background: rgba(255, 255, 255, 0.035); }
 .file-row .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-row.dir .fname { color: var(--accent-2); cursor: pointer; }
+.file-name-button { border: 0; border-radius: 4px; background: transparent; box-shadow: none; color: var(--text-0); padding: 2px; text-align: left; }
+.file-name-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); }
+.file-name-button:disabled { opacity: 1; cursor: default; }
+.file-name-button.dir { color: var(--accent-2); cursor: pointer; }
 .file-row .fsize { color: var(--text-2); font-family: var(--mono); font-size: 11px; width: 90px; text-align: right; }
 .file-row .fperm { color: var(--text-2); font-family: var(--mono); font-size: 11px; }
 
