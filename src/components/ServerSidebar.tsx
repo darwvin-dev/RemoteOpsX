@@ -141,6 +141,17 @@ export function ServerSidebar({ onNew, onEdit }: Props) {
                 className={`server-item${focusedServerId === s.id ? " active" : ""}`}
                 onClick={() => setFocusedServer(s.id)}
                 onDoubleClick={() => defaultConnect(s)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter") defaultConnect(s);
+                  else if (event.key === " ") {
+                    event.preventDefault();
+                    setFocusedServer(s.id);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${s.name}, ${s.username} at ${s.host}. Press Enter to connect.`}
               >
                 <div className="si-top">
                   <span className={`env-dot env-${s.environment}`} title={s.environment} />
