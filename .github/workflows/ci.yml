@@ -52,3 +52,17 @@ jobs:
 
       - name: Rust build
         run: cargo build --manifest-path src-tauri/Cargo.toml
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci || npm install
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo build --manifest-path src-tauri/Cargo.toml

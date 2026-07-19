@@ -1,13 +1,13 @@
 # RemoteOpsX
 
-**A unified Linux remote-operations workspace — not just another terminal.**
+**A unified Linux and macOS remote-operations workspace — not just another terminal.**
 
 RemoteOpsX is *MobaXterm + Remmina + a Netdata-lite + a server runbook engine*,
-built for Linux operators. It combines remote access (SSH / SFTP / FTP / RDP / VNC),
+built for Linux and macOS operators. It combines remote access (SSH / SFTP / FTP / RDP / VNC),
 **agentless** live server-health monitoring, systemd diagnostics, log tooling,
 SSH tunnels and **executable runbooks** into one keyboard-friendly desktop app.
 
-> Working name: **RemoteOpsX**. Linux-first (Arch, Ubuntu, Debian, Fedora).
+> Working name: **RemoteOpsX**. Supports macOS and Linux (Arch, Ubuntu, Debian, Fedora, openSUSE).
 
 ---
 
@@ -190,7 +190,7 @@ sudo dnf install openssh-clients sshpass freerdp tigervnc gnome-keyring
 Prerequisites: **Rust** (stable, via rustup), **Node 18+**, and the Tauri Linux
 system deps (`webkit2gtk-4.1`, `libappindicator`, etc).
 
-On Arch, Debian/Ubuntu, Fedora, and openSUSE, install all runtime and build
+On macOS, Arch, Debian/Ubuntu, Fedora, and openSUSE, install all runtime and build
 dependencies interactively with:
 
 ```bash
