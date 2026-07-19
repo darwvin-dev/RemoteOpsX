@@ -9,7 +9,7 @@ type FileProtocol = "sftp" | "ftp";
 /** Remote file browser over SFTP/scp or plain FTP/curl. */
 export function SftpPanel({ server, active, protocol = "sftp" }: { server: Server; active: boolean; protocol?: FileProtocol }) {
   const pushAlert = useStore((s) => s.pushAlert);
-  const [path, setPath] = useState(protocol === "ftp" ? "/" : `/home/${server.username}`);
+  const [path, setPath] = useState(protocol === "ftp" ? "/" : server.username === "root" ? "/root" : `/home/${server.username}`);
   const [files, setFiles] = useState<RemoteFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -124,20 +124,21 @@ export function SftpPanel({ server, active, protocol = "sftp" }: { server: Serve
         <button className="tiny primary" disabled={busy} onClick={() => void upload()}>⬆ Upload</button>
       </div>
       <div className="sftp-list">
-        <div className="file-row" style={{ color: "var(--text-2)" }} onClick={() => void list(join(path, ".."))}>
+        <div className="file-row" style={{ color: "var(--text-2)" }}>
           <span className="fperm">drwx</span>
-          <span className="fname dir">..</span>
+          <button type="button" className="fname file-name-button dir" onClick={() => void list(join(path, ".."))}>..</button>
         </div>
         {files.map((f) => (
           <div key={f.name} className={`file-row${f.is_dir ? " dir" : ""}`}>
             <span className="fperm">{f.permissions}</span>
-            <span className="fname" onClick={() => f.is_dir && void list(join(path, f.name))}>
+            <button type="button" className="fname file-name-button" disabled={!f.is_dir}
+              onClick={() => f.is_dir && void list(join(path, f.name))} title={f.name}>
               {f.is_dir ? "📁 " : "📄 "}{f.name}
-            </span>
+            </button>
             <span className="fsize">{f.is_dir ? "" : fmtSize(f.size)}</span>
-            {!f.is_dir && <button className="tiny ghost" onClick={() => void download(f)}>⬇</button>}
-            <button className="tiny ghost" onClick={() => void rename(f)}>✎</button>
-            <button className="tiny ghost" onClick={() => void remove(f)}>🗑</button>
+            {!f.is_dir && <button className="tiny ghost" aria-label={`Download ${f.name}`} onClick={() => void download(f)}>⬇</button>}
+            <button className="tiny ghost" aria-label={`Rename ${f.name}`} onClick={() => void rename(f)}>✎</button>
+            <button className="tiny ghost danger-ghost" aria-label={`Delete ${f.name}`} onClick={() => void remove(f)}>🗑</button>
           </div>
         ))}
         {busy && <div className="panel-hint">Working…</div>}
