@@ -7,6 +7,11 @@ INSTALL_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
 ICON_DIR="${HOME}/.local/share/icons/hicolor/128x128/apps"
 
+if [[ "${REMOTEOPSX_SKIP_DEPENDENCIES:-0}" != "1" ]]; then
+  SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+  bash "${SCRIPT_DIR}/bootstrap-dependencies.sh" --runtime
+fi
+
 if [[ ! -f "${APPIMAGE}" ]]; then
   echo "AppImage not found: ${APPIMAGE}" >&2
   echo "Usage: $0 path/to/RemoteOpsX-x86_64.AppImage" >&2
@@ -32,4 +37,3 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 
 echo "Installed RemoteOpsX to ${INSTALL_DIR}/${APP_NAME}"
-echo "If the AppImage does not start on Arch, install FUSE 2: sudo pacman -S fuse2"
