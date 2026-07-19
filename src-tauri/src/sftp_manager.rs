@@ -29,24 +29,14 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
             continue;
         }
         // perms links owner group size epoch name...
-        let cols: Vec<&str> = line
-            .splitn(7, char::is_whitespace)
-            .filter(|s| !s.is_empty())
-            .collect();
-        if cols.len() < 7 {
-            continue;
+        // `ls` pads columns with a variable number of spaces. Using `splitn`
+        // with `char::is_whitespace` counts those empty separators toward the
+        // limit and silently drops otherwise valid entries. Collecting the
+        // whitespace-delimited fields also preserves filenames containing
+        // spaces by joining everything after the six metadata columns.
+        if let Some(file) = parse_ls_line(line) {
+            files.push(file);
         }
-        let perms = cols[0];
-        let size: u64 = cols[4].parse().unwrap_or(0);
-        let name = cols[6].to_string();
-        // Strip symlink "-> target" decoration.
-        let name = name.split(" -> ").next().unwrap_or(&name).to_string();
-        files.push(RemoteFile {
-            is_dir: perms.starts_with('d'),
-            permissions: perms.to_string(),
-            size,
-            name,
-        });
     }
     files.sort_by(|a, b| {
         b.is_dir
@@ -54,6 +44,27 @@ pub fn list_dir(server: &Server, path: &str) -> Result<Vec<RemoteFile>> {
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(files)
+}
+
+fn parse_ls_line(line: &str) -> Option<RemoteFile> {
+    let cols: Vec<&str> = line.split_whitespace().collect();
+    if cols.len() < 7 {
+        return None;
+    }
+    let permissions = cols[0].to_string();
+    let size = cols[4].parse().unwrap_or(0);
+    let decorated_name = cols[6..].join(" ");
+    let name = decorated_name
+        .split(" -> ")
+        .next()
+        .unwrap_or(&decorated_name)
+        .to_string();
+    Some(RemoteFile {
+        is_dir: permissions.starts_with('d'),
+        permissions,
+        size,
+        name,
+    })
 }
 
 /// Build the scp remote spec, honoring port/key/password.
@@ -69,6 +80,8 @@ fn scp_base(server: &Server) -> (String, Vec<String>) {
             if !key.trim().is_empty() {
                 args.push("-i".into());
                 args.push(key.clone());
+                args.push("-o".into());
+                args.push("IdentitiesOnly=yes".into());
             }
         }
     } else if server.auth_type == "password" {
@@ -197,6 +210,24 @@ mod tests {
 
         assert_eq!(program, "scp");
         assert!(args.iter().any(|a| a == "/home/user/.ssh/id_ed25519"));
+        assert!(has_opt(&args, "IdentitiesOnly=yes"));
         assert!(!has_opt(&args, "PubkeyAuthentication=no"));
+    }
+
+    #[test]
+    fn parses_padded_ls_rows_and_filenames_with_spaces() {
+        let line = "-rw-r--r--  1 root root 42 1710000000 release notes.txt";
+        let file = parse_ls_line(line).unwrap();
+        assert_eq!(file.size, 42);
+        assert_eq!(file.name, "release notes.txt");
+        assert!(!file.is_dir);
+    }
+
+    #[test]
+    fn parses_directories_and_strips_symlink_targets() {
+        let directory = parse_ls_line("drwxr-xr-x  2 root root 4096 1710000000 releases").unwrap();
+        let symlink = parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
+        assert!(directory.is_dir);
+        assert_eq!(symlink.name, "current");
     }
 }

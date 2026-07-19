@@ -10,21 +10,15 @@ export function TabBar() {
   if (tabs.length === 0) return null;
 
   return (
-    <div className="tabbar">
+    <div className="tabbar" role="tablist" aria-label="Open sessions">
       {tabs.map((t) => (
-        <div
-          key={t.id}
-          className={`tab${activeTabId === t.id ? " active" : ""}`}
-          onClick={() => setActiveTab(t.id)}
-        >
-          <span className="tab-kind">{t.kind}</span>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
-          <span
-            className="tab-close"
-            onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}
-          >
-            ✕
-          </span>
+        <div key={t.id} className={`tab-shell${activeTabId === t.id ? " active" : ""}`}>
+          <button type="button" className="tab" onClick={() => setActiveTab(t.id)} role="tab"
+            aria-selected={activeTabId === t.id} tabIndex={activeTabId === t.id ? 0 : -1}>
+            <span className="tab-kind">{t.kind}</span>
+            <span className="tab-title">{t.title}</span>
+          </button>
+          <button type="button" className="tab-close" aria-label={`Close ${t.title}`} onClick={() => closeTab(t.id)}>✕</button>
         </div>
       ))}
     </div>

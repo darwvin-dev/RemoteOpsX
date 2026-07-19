@@ -100,6 +100,11 @@ export const useStore = create<AppStore>((set, get) => ({
       if (s.activeTabId === id) {
         const fallback = tabs[idx] ?? tabs[idx - 1] ?? tabs[tabs.length - 1] ?? null;
         activeTabId = fallback ? fallback.id : null;
+        return {
+          tabs,
+          activeTabId,
+          focusedServerId: fallback?.serverId ?? null,
+        };
       }
       return { tabs, activeTabId };
     });
