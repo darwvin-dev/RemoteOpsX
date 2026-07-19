@@ -31,6 +31,18 @@ fn vnc_bin() -> Option<&'static str> {
 
 /// Launch an external VNC viewer for the given server.
 pub fn launch(server: &Server, opts: &VncOptions) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let target = format!("vnc://{}:{}", server.host, server.vnc_port());
+        Command::new("open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| anyhow!("failed to launch macOS Screen Sharing: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
     let bin = vnc_bin().ok_or_else(|| {
         anyhow!("No VNC viewer found. Install one (e.g. `pacman -S tigervnc` / `apt install tigervnc-viewer`).")
     })?;
@@ -57,4 +69,5 @@ pub fn launch(server: &Server, opts: &VncOptions) -> Result<()> {
     cmd.spawn()
         .map_err(|e| anyhow!("failed to launch {bin}: {e}"))?;
     Ok(())
+    }
 }
