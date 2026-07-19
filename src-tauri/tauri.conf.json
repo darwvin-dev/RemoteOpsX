@@ -47,7 +47,24 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["openssh-client"]
+        "depends": [
+          "openssh-client",
+          "sshpass",
+          "curl",
+          "freerdp2-x11 | freerdp3-x11",
+          "tigervnc-viewer",
+          "gnome-keyring"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "openssh-clients",
+          "sshpass",
+          "curl",
+          "freerdp",
+          "tigervnc",
+          "gnome-keyring"
+        ]
       }
     }
   }
