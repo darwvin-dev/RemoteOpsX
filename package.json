@@ -13,8 +13,8 @@
     "app:dev": "tauri dev",
     "app:build": "tauri build",
     "app:build:arch": "NO_STRIP=1 PKG_CONFIG_PATH=\"$PWD/scripts/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}\" tauri build",
-    "deps:runtime": "bash packaging/linux/bootstrap-dependencies.sh --runtime",
-    "deps:build": "bash packaging/linux/bootstrap-dependencies.sh --build"
+    "deps:runtime": "bash scripts/bootstrap-dependencies.sh --runtime",
+    "deps:build": "bash scripts/bootstrap-dependencies.sh --build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
