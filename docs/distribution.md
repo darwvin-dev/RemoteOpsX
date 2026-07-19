@@ -1,6 +1,6 @@
 # Distribution
 
-RemoteOpsX ships as a native Linux desktop app. Docker is not required.
+RemoteOpsX ships as a native Linux and macOS desktop app. Docker is not required.
 
 ## GitHub Releases
 
@@ -16,6 +16,25 @@ Expected release assets:
 - `RemoteOpsX-x86_64.AppImage`
 - Debian package (`.deb`)
 - RPM package (`.rpm`)
+- macOS disk image (`.dmg`)
+
+## macOS
+
+The macOS build uses the native Keychain for secrets and the built-in Screen
+Sharing application for VNC. FreeRDP is installed with Homebrew for RDP.
+
+Install build dependencies:
+
+```bash
+npm run deps:build
+```
+
+For an unpacked application bundle, the installer prepares runtime dependencies
+before copying RemoteOpsX into `~/Applications`:
+
+```bash
+bash packaging/macos/install-app.sh path/to/RemoteOpsX.app
+```
 
 ## Local AppImage Install
 
