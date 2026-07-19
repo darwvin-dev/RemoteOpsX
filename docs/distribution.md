@@ -19,15 +19,28 @@ Expected release assets:
 
 ## Local AppImage Install
 
+The installer first detects the Linux distribution and offers to install all
+runtime dependencies through its official package manager. It does not make
+system changes until the user confirms the package list.
+
 ```bash
 chmod +x RemoteOpsX-x86_64.AppImage
 ./packaging/linux/install-appimage.sh ./RemoteOpsX-x86_64.AppImage
 ```
 
-On Arch, install FUSE 2 if the AppImage does not launch:
+Set `REMOTEOPSX_SKIP_DEPENDENCIES=1` only when dependencies are already managed
+by the host image or an administrator:
 
 ```bash
-sudo pacman -S fuse2
+REMOTEOPSX_SKIP_DEPENDENCIES=1 ./packaging/linux/install-appimage.sh ./RemoteOpsX-x86_64.AppImage
+```
+
+For source development, one command installs Rust, Tauri build requirements,
+FreeRDP, and VNC development libraries on Arch, Debian/Ubuntu, Fedora, or
+openSUSE:
+
+```bash
+npm run deps:build
 ```
 
 ## Arch Package
@@ -36,9 +49,8 @@ The starter `PKGBUILD` is in `packaging/arch/PKGBUILD`.
 
 Before publishing to AUR or a pacman repository:
 
-1. Replace `OWNER` in `url` with the GitHub organization/user.
-2. Copy `src-tauri/icons/128x128.png` to `packaging/arch/remoteopsx.png`.
-3. Generate checksums:
+1. Copy `src-tauri/icons/128x128.png` to `packaging/arch/remoteopsx.png`.
+2. Generate checksums:
 
    ```bash
    cd packaging/arch

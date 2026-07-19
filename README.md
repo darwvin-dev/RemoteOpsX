@@ -190,6 +190,16 @@ sudo dnf install openssh-clients sshpass freerdp tigervnc gnome-keyring
 Prerequisites: **Rust** (stable, via rustup), **Node 18+**, and the Tauri Linux
 system deps (`webkit2gtk-4.1`, `libappindicator`, etc).
 
+On Arch, Debian/Ubuntu, Fedora, and openSUSE, install all runtime and build
+dependencies interactively with:
+
+```bash
+npm run deps:build
+```
+
+The AppImage installer runs the runtime-only dependency bootstrap automatically
+and asks for confirmation before invoking the distribution package manager.
+
 ```bash
 # Tauri system deps (Arch example)
 sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl appmenu-gtk-module libappindicator-gtk3 librsvg

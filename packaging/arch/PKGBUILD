@@ -4,7 +4,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Linux remote operations cockpit for SSH, SFTP, RDP, VNC, health and runbooks"
 arch=('x86_64')
-url="https://github.com/OWNER/remoteopsx"
+url="https://github.com/darwvin-dev/RemoteOpsX"
 license=('MIT')
 depends=(
   'fuse2'
@@ -13,15 +13,16 @@ depends=(
   'gtk3'
   'libayatana-appindicator'
   'librsvg'
+  'sshpass'
+  'curl'
+  'freerdp'
+  'tigervnc'
+  'libsecret'
 )
 optdepends=(
-  'sshpass: password authentication for SSH/SFTP'
-  'freerdp: RDP launcher'
-  'tigervnc: VNC launcher'
   'remmina: alternative VNC launcher'
-  'gnome-keyring: Secret Service keyring backend'
-  'kwallet: KDE keyring backend'
-  'curl: legacy FTP support'
+  'gnome-keyring: GNOME Secret Service provider'
+  'kwallet: KDE Secret Service provider'
 )
 provides=('remoteopsx')
 conflicts=('remoteopsx')
