@@ -1,10 +1,12 @@
 import { useStore } from "../store";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { HealthPanel } from "./HealthPanel";
 import { ServicesPanel } from "./ServicesPanel";
 import { NotesSnippetsPanel } from "./NotesSnippetsPanel";
 
 const VIEWS = [
   { key: "health", label: "Health", icon: "◆" },
+  { key: "diagnostics", label: "Diagnostics", icon: "◎" },
   { key: "services", label: "Services", icon: "●" },
   { key: "notes", label: "Notes", icon: "✦" },
   { key: "snippets", label: "Snippets", icon: "⌁" },
@@ -50,6 +52,8 @@ export function RightPanel() {
           <div className="panel-hint">Select a server to see live operations data.</div>
         ) : view === "health" ? (
           <HealthPanel server={server} />
+        ) : view === "diagnostics" ? (
+          <DiagnosticsPanel server={server} />
         ) : view === "services" ? (
           <ServicesPanel server={server} />
         ) : (
