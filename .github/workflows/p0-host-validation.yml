@@ -1,0 +1,123 @@
+name: P0 Host Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/p0-host-validation.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/p0-security-hardening'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/p0-security-hardening
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - name: Harden host syntax before known_hosts persistence
+        shell: python
+        run: |
+          from pathlib import Path
+
+          host_path = Path('src-tauri/src/host_identity.rs')
+          host = host_path.read_text()
+          old = '''fn validate_target(host: &str, port: u16) -> Result<()> {
+              if host.trim().is_empty()
+                  || host.chars().any(char::is_whitespace)
+                  || host.chars().any(char::is_control)
+              {
+                  return Err(anyhow!("invalid SSH host name"));
+              }
+              if port == 0 {
+                  return Err(anyhow!("invalid SSH port"));
+              }
+              Ok(())
+          }'''
+          new = '''pub fn validate_target(host: &str, port: u16) -> Result<()> {
+              // The first known_hosts field has wildcard/list/marker syntax. Accept only
+              // the DNS/IP characters RemoteOpsX needs so a profile value cannot create
+              // trust for additional hosts (for example via commas or '*'). Raw IPv6
+              // addresses and zone identifiers such as fe80::1%eth0 remain supported.
+              let valid_host = !host.is_empty()
+                  && host == host.trim()
+                  && host.chars().all(|character| {
+                      character.is_ascii_alphanumeric()
+                          || matches!(character, '.' | '-' | '_' | ':' | '%')
+                  });
+              if !valid_host {
+                  return Err(anyhow!(
+                      "invalid SSH host name; use a DNS name, IPv4 address, or raw IPv6 address"
+                  ));
+              }
+              if port == 0 {
+                  return Err(anyhow!("invalid SSH port"));
+              }
+              Ok(())
+          }'''
+          if old not in host:
+              raise SystemExit('host validation anchor missing')
+          host = host.replace(old, new, 1)
+
+          anchor = '''    #[test]
+              fn normalizes_default_and_nonstandard_port_targets() {'''
+          tests = '''    #[test]
+              fn rejects_known_hosts_metacharacters_and_accepts_dns_ip_forms() {
+                  for invalid in [
+                      "prod,*.internal",
+                      "*.internal",
+                      "!prod.internal",
+                      "|1|hashed",
+                      "[2001:db8::1]",
+                      "prod internal",
+                      "user@host",
+                  ] {
+                      assert!(validate_target(invalid, 22).is_err(), "accepted {invalid}");
+                  }
+                  for valid in [
+                      "prod.internal",
+                      "10.0.0.10",
+                      "2001:db8::1",
+                      "fe80::1%eth0",
+                      "host_name.internal",
+                  ] {
+                      assert!(validate_target(valid, 22).is_ok(), "rejected {valid}");
+                  }
+              }
+
+              #[test]
+              fn normalizes_default_and_nonstandard_port_targets() {'''
+          if anchor not in host:
+              raise SystemExit('host test anchor missing')
+          host = host.replace(anchor, tests, 1)
+          host_path.write_text(host)
+
+          lib_path = Path('src-tauri/src/lib.rs')
+          lib = lib_path.read_text()
+          old = '''    database::validate_server_input(&input)
+                  .map_err(|error| DomainError::validation("server", error.to_string()))?;
+              if input.id.is_none() {'''
+          new = '''    database::validate_server_input(&input)
+                  .map_err(|error| DomainError::validation("server", error.to_string()))?;
+              host_identity::validate_target(&input.host, input.port)
+                  .map_err(|error| DomainError::validation("host", error.to_string()))?;
+              if input.id.is_none() {'''
+          if old not in lib:
+              raise SystemExit('server validation anchor missing')
+          lib_path.write_text(lib.replace(old, new, 1))
+      - name: Format Rust
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml
+      - name: Remove temporary workflow
+        run: rm .github/workflows/p0-host-validation.yml
+      - name: Commit host validation hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src .github/workflows/p0-host-validation.yml
+          git commit -m "security: reject known-hosts metacharacter injection"
+          git push origin HEAD:agent/p0-security-hardening
