@@ -12,6 +12,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: 22.23.1
+  RUST_VERSION: 1.97.1
+
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -33,6 +37,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Cache cargo
@@ -42,16 +47,19 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-${{ hashFiles('src-tauri/Cargo.lock') }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install JS dependencies
         run: npm ci
+
+      - name: Version consistency
+        run: npm run version:check
 
       - name: Dependency audit
         run: npm audit --audit-level=high
@@ -80,16 +88,20 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install JS dependencies
         run: npm ci
+
+      - name: Version consistency
+        run: npm run version:check
 
       - name: Frontend tests
         run: npm test

@@ -1,0 +1,24 @@
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate Conventional Commit-style PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|security|perf|refactor|test|docs|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: .+'
+          if [[ ! "$PR_TITLE" =~ $pattern ]]; then
+            echo "PR title must follow Conventional Commit style, e.g. 'fix: reject changed SSH host keys'."
+            echo "Actual: $PR_TITLE"
+            exit 1
+          fi

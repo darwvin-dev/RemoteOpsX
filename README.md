@@ -2,298 +2,192 @@
 
 **A unified Linux and macOS remote-operations workspace — not just another terminal.**
 
-RemoteOpsX is *MobaXterm + Remmina + a Netdata-lite + a server runbook engine*,
-built for Linux and macOS operators. It combines remote access (SSH / SFTP / FTP / RDP / VNC),
-**agentless** live server-health monitoring, systemd diagnostics, log tooling,
-SSH tunnels and **executable runbooks** into one keyboard-friendly desktop app.
+RemoteOpsX combines SSH/SFTP/FTP/RDP/VNC access, agentless server-health monitoring, systemd diagnostics, log tooling, SSH tunnels, executable runbooks, session history, snippets, and focused-host connection diagnostics in one Tauri desktop application.
 
-> Working name: **RemoteOpsX**. Supports macOS and Linux (Arch, Ubuntu, Debian, Fedora, openSUSE).
-
----
+> Current release line: **0.2.0-alpha**. Linux targets include Arch, Ubuntu, Debian, Fedora, and openSUSE; macOS is also supported.
 
 ## Project status
 
-RemoteOpsX is at a **validated MVP** stage: the core server manager, SSH/SFTP/FTP,
-RDP/VNC launchers, live health, logs, services, runbooks, tunnels and persisted
-settings are implemented. The remaining items are production hardening work such
-as native SSH transport, known-hosts management, app lock, embedded desktop
-protocols, CI/release signing and live integration fixtures.
+RemoteOpsX is a validated MVP undergoing production hardening. The core operator workflows are implemented; the remaining release blockers are explicit SSH host-identity trust, runtime dependency preflight, restart reconciliation, centralized secret redaction, live integration fixtures, packaged-app E2E coverage, and signed distribution.
 
-Current automated handoff checks:
+Current automated checks:
 
 ```bash
+npm ci
+npm run version:check
+npm audit --audit-level=high
 npm test
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-cargo test --manifest-path src-tauri/Cargo.toml
-git diff --check
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+cargo build --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-See [TODO.md](TODO.md) for the roadmap and `docs/superpowers/` for specs,
-implementation plans and handoff notes.
+CI runs the relevant gates on Linux and macOS. Tagged releases repeat the release preflight, verify that the tag matches the application version, build platform bundles, publish SHA-256 manifests, and generate GitHub release notes.
 
----
+See [TODO.md](TODO.md) for the production roadmap, [CHANGELOG.md](CHANGELOG.md) for product changes, and [CONTRIBUTING.md](CONTRIBUTING.md) for the release discipline.
 
-## Why it's different from a normal terminal
-
-A terminal gives you a shell. RemoteOpsX gives you an **operations cockpit**:
+## Why it is different from a normal terminal
 
 | Plain terminal | RemoteOpsX |
 | --- | --- |
 | One SSH shell | SSH + SFTP + RDP + VNC + tunnels, tabbed |
-| You type `top`, `df`, `free`… | **Live agentless health panel** auto-collects CPU/RAM/disk/net/load/uptime, top processes, ports and failed services — no agent installed on the server |
-| You remember the diagnosis steps | **Runbooks**: versioned, step-by-step, confirmation-gated, with captured output and history |
-| Secrets in `~/.ssh/config` or your head | Secrets in the **OS keyring**, never in the database |
-| You `grep` logs by hand | Logs panel + one-click **diagnostic bundle** |
+| Manual `top`, `df`, `free` checks | Agentless CPU/RAM/disk/net/load/uptime/process/service health |
+| Diagnosis steps live in memory | Versioned, confirmation-gated executable runbooks |
+| Credentials scattered across tools | Password secrets in the OS keyring; SQLite stores references only |
+| Manual log collection | Logs panel + diagnostic bundle workflow |
+| Trial-and-error connection debugging | Read-only saved-profile SSH diagnostics with actionable failure classes |
 
-The health collector reads `/proc`, `/sys`, `df`, `ss` and `systemctl` over a
-**separate SSH exec channel** (never your interactive shell), so the metrics
-never interfere with what you're typing.
+Health collection runs over a separate SSH exec path and does not interfere with the interactive terminal PTY.
 
----
+## Implemented features
 
-## Features (MVP)
-
-- **Server Manager** — profiles with host/port/user, protocol flags, auth type,
-  key path, tags, group/folder, environment (prod/staging/dev) and notes.
-  Persisted in SQLite; searchable, grouped sidebar.
-- **SSH Terminal** — xterm.js terminals backed by server-side PTYs running the
-  system `ssh` client. Multiple tabs, reconnect, resize, copy/paste, non-blocking.
-- **SFTP / FTP File Browser** — list / upload / download / delete / rename remote files.
-  SFTP is preferred; legacy FTP is supported through curl and is explicitly
-  marked as plaintext in the UI. FTP profiles use password authentication.
-- **RDP** — launches `xfreerdp` with the profile (fullscreen / resolution).
-- **VNC** — launches an installed VNC viewer (tigervnc, remmina, …).
-- **Live Health Panel** — agentless metrics every 2–5s (configurable): CPU, RAM,
-  swap, disks, load, uptime, network rate, top CPU/MEM processes, listening
-  ports and failed services. Threshold warnings.
-- **Services Panel** — list failed systemd units, inspect status/logs,
-  start/stop/restart with **confirmation + exact-command preview**.
-- **Logs Panel** — tail remote files, read `journalctl`, filter, save locally,
-  and build a one-shot **diagnostic bundle**.
-- **Runbooks** — YAML-defined, executed step-by-step over SSH with per-step
-  output, confirmation gates and persisted run history. Six built-ins ship
-  by default (Linux Health Check, Diagnose High Disk Usage, Diagnose Failed
-  Service, Restart Service Safely, VoIP Server Check, SMPP Gateway Check).
-- **SSH Tunnels** — local (`-L`), remote (`-R`) and dynamic SOCKS (`-D`) forwards,
-  tracked and stoppable, profiles persisted.
-- **Application Settings** — persisted theme, default protocol ports, health
-  refresh interval, retention, app-lock timeout placeholder, transfer conflict
-  behavior and desktop integration flags.
-
----
+- **Server Manager** — profile CRUD, independent protocol ports, tags, groups, environment classification, notes, search, and SQLite persistence.
+- **SSH Terminal** — xterm.js terminal tabs backed by PTYs driving the system OpenSSH client.
+- **SSH diagnostics** — read-only focused-host probe through the same auth/keyring/host-key path used by live operations.
+- **SFTP-style browser** — list/upload/download/delete/rename over SSH/SCP.
+- **Legacy FTP** — curl-backed file operations with plaintext-protocol warning.
+- **RDP** — external FreeRDP launcher using certificate TOFU and stdin credential delivery for stored passwords.
+- **VNC** — external installed-viewer launcher.
+- **Live Health** — agentless CPU, RAM, swap, disks, load, uptime, network rate, processes, ports, and failed services.
+- **Services** — inspect/status/logs and confirmation-gated start/stop/restart.
+- **Logs / diagnostic bundles** — remote log and journal collection with local export.
+- **Runbooks** — YAML steps, variables, confirmation boundaries, output capture, and persisted history.
+- **SSH tunnels** — local, remote, and dynamic SOCKS forwards with persisted records and live-process reconciliation.
+- **Session history** and **command snippets**.
+- **Settings** — theme, ports, health refresh, history retention, transfer behavior, and desktop options.
 
 ## Architecture
 
-```
+```text
 src/                         React + TypeScript frontend
-  api.ts                     typed wrappers over Tauri commands
+  api.ts                     typed Tauri command wrappers
   errors.ts                  normalized frontend error contract
-  settings.ts/settingsStore  typed settings defaults, validation and store
-  store.ts                   Zustand global UI state
-  types.ts                   shared types (mirror Rust models)
-  components/
-    ServerSidebar / ServerForm
-    TabBar / TabContent
-    TerminalTab               (xterm.js)
-    HealthPanel / ServicesPanel
-    RunbookRunner / RunbookLauncher
-    SftpPanel / RemoteDesktopTab / LogsPanel
-    TunnelManager / SettingsModal / ToastStack
-    RightPanel / BottomPanel / NotesSnippetsPanel
+  store.ts                   Zustand UI state
+  types.ts                   shared frontend models
+  components/                server, terminal, files, health, runbooks, etc.
 
-src-tauri/src/               Rust backend (Tauri v2 commands)
-  lib.rs                     command surface + AppState wiring
+src-tauri/src/               Rust backend
+  lib.rs                     Tauri command surface + AppState
   database.rs                SQLite schema + queries
-  error.rs                   stable DomainError IPC payload
-  settings.rs                typed settings contract + validation
-  vault.rs                   OS keyring (Secret Service) — secrets only here
-  ssh_manager.rs             ssh argv builder + one-shot remote exec
-  pty_manager.rs             interactive PTY terminals (system ssh)
-  health_collector.rs        agentless metric probe + parsing + rate deltas
-  runbook_runner.rs          YAML runbook engine + built-ins
-  sftp_manager.rs            list/upload/download/delete/rename (ssh/scp)
-  ftp_manager.rs             legacy plaintext FTP operations (curl)
-  rdp_adapter.rs             xfreerdp launcher (swappable for embedded later)
-  vnc_adapter.rs             VNC viewer launcher
-  tunnel_manager.rs          ssh -L/-R/-D process registry
-  models.rs                  serde models
+  error.rs                   stable IPC error payload
+  vault.rs                   OS keyring access
+  ssh_manager.rs             OpenSSH argv + one-shot exec
+  pty_manager.rs             interactive SSH PTYs
+  health_collector.rs        agentless health probes
+  runbook_runner.rs          runbook parser/executor
+  sftp_manager.rs            SSH/SCP file operations
+  ftp_manager.rs             curl FTP operations
+  rdp_adapter.rs             FreeRDP launcher
+  vnc_adapter.rs             VNC launcher
+  tunnel_manager.rs          SSH forward process registry
 ```
 
-SSH uses its configured profile port. FTP, RDP and VNC have independent
-per-profile ports with protocol-standard defaults (21, 3389 and 5900).
+The transport layer intentionally uses mature system clients so native transports can be introduced later without coupling UI workflows to a specific SSH/RDP implementation.
 
-The SSH/SFTP/FTP/RDP/VNC/tunnel layers are intentionally thin abstractions over the
-system OpenSSH/curl/FreeRDP binaries so the MVP is robust today, while leaving clean
-seams to swap in native transports later.
+## Local data and secrets
 
----
+Operational metadata is stored in `remoteopsx.db` under Tauri's per-user application data directory. Passwords are not stored in SQLite: the database contains a `secret_ref`, while the secret itself is stored through the OS keyring/Secret Service.
 
-## Settings and local data
+SQLite is bundled into the Rust binary; no system SQLite package is required.
 
-RemoteOpsX stores operational metadata in SQLite at Tauri's per-user app data
-directory, in `remoteopsx.db` (for example, Linux typically resolves this under
-`~/.local/share/dev.remoteopsx.app/`). Secrets stay in the OS keyring and are
-referenced from SQLite by `secret_ref`.
-
-The `app_settings` table is a singleton JSON row with schema version `1`.
-Defaults and validation ranges:
-
-| Setting | Default | Valid range / values |
-| --- | --- | --- |
-| Theme | `system` | `system`, `dark`, `light` |
-| Default ports | SSH `22`, FTP `21`, RDP `3389`, VNC `5900` | `1..=65535` |
-| Health refresh | `3000 ms` | `1000..=60000 ms` |
-| History retention | `90 days` | `1..=3650 days` |
-| App-lock timeout | `15 minutes` | `1..=1440 minutes` |
-| Transfer conflict policy | `ask` | `ask`, `overwrite`, `rename`, `skip` |
-| Desktop clipboard/audio/notifications | enabled | boolean |
-
-The settings UI is available from the top bar or command palette. Changes are
-optimistic in the UI and roll back if backend validation or persistence fails.
-
----
-
-## Installation requirements
-
-RemoteOpsX is a Tauri app. To **run it**, the host needs the system tools it
-drives:
+## Runtime requirements
 
 | Tool | Used for | Required? |
 | --- | --- | --- |
-| `ssh`, `scp` (OpenSSH client) | SSH, SFTP, health, runbooks, tunnels | **Yes** |
-| `curl` | Legacy FTP browser | Only if you use FTP |
-| `sshpass` | password-auth (non-interactive) | Only if you use password auth |
-| `xfreerdp` / `xfreerdp3` | RDP | Only for RDP |
-| a VNC viewer (`tigervnc`, `remmina`, …) | VNC | Only for VNC |
-| OS Secret Service (GNOME Keyring / KWallet) | secret storage | **Yes** |
+| `ssh`, `scp` | SSH, SFTP-style operations, health, runbooks, tunnels | **Yes** |
+| OS Secret Service / keyring backend | password secret storage | **Yes for stored passwords** |
+| `sshpass` | non-interactive SSH password auth | Only for password-auth profiles |
+| `curl` | legacy FTP | Only for FTP |
+| `xfreerdp3` / `xfreerdp` | RDP | Only for RDP |
+| VNC viewer (`vncviewer`, TigerVNC, Remmina, etc.) | VNC | Only for VNC |
 
-SQLite is **bundled** into the binary — no system SQLite needed.
-
-Install the runtime tools:
+Example runtime packages:
 
 ```bash
 # Arch
-sudo pacman -S openssh sshpass freerdp tigervnc gnome-keyring
+sudo pacman -S openssh sshpass curl freerdp tigervnc gnome-keyring
 
 # Debian / Ubuntu
-sudo apt install openssh-client sshpass freerdp2-x11 tigervnc-viewer gnome-keyring
+sudo apt install openssh-client sshpass curl freerdp2-x11 tigervnc-viewer gnome-keyring
 
 # Fedora
-sudo dnf install openssh-clients sshpass freerdp tigervnc gnome-keyring
+sudo dnf install openssh-clients sshpass curl freerdp tigervnc gnome-keyring
 ```
 
----
+## Development
 
-## Build / run from source (development)
-
-Prerequisites: **Rust** (stable, via rustup), **Node 18+**, and the Tauri Linux
-system deps (`webkit2gtk-4.1`, `libappindicator`, etc).
-
-On macOS, Arch, Debian/Ubuntu, Fedora, and openSUSE, install all runtime and build
-dependencies interactively with:
+The repository pins the release/CI toolchains in `.nvmrc` and `rust-toolchain.toml`. Install the platform build prerequisites with:
 
 ```bash
 npm run deps:build
 ```
 
-The AppImage installer runs the runtime-only dependency bootstrap automatically
-and asks for confirmation before invoking the distribution package manager.
+Then:
 
 ```bash
-# Tauri system deps (Arch example)
-sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl appmenu-gtk-module libappindicator-gtk3 librsvg
-
-# install JS deps
-npm install
-
-# run the app in dev mode (Vite + Tauri)
+npm ci
+npm run version:check
 npm run app:dev
 ```
 
-Useful scripts:
-
-```bash
-npm run dev          # Vite dev server only (web UI, no Tauri shell)
-npm test             # frontend regression tests
-npm run build        # type-check + build the frontend
-npm run app:dev      # full Tauri desktop app, hot-reload
-npm run app:build    # produce AppImage / .deb / .rpm bundles
-npm run app:build:arch # Arch workaround for current linuxdeploy/gdk-pixbuf incompatibilities
-```
-
-Backend-only compile check:
-
-```bash
-cargo check --manifest-path src-tauri/Cargo.toml
-```
-
-Full local validation:
+Useful commands:
 
 ```bash
 npm test
 npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-cargo test --manifest-path src-tauri/Cargo.toml
-git diff --check
+npm run app:build
+npm run app:build:arch
+cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
----
+## Version and release policy
 
-## Specs, plans and graph
+The following three files are one version contract and must match:
 
-- Completion/hardening spec: `docs/superpowers/specs/2026-06-20-project-hardening-design.md`
-- Production roadmap spec: `docs/superpowers/specs/2026-06-21-production-roadmap-design.md`
-- Implementation plans: `docs/superpowers/plans/`
-- Graphify report and interactive graph: `graphify-out/GRAPH_REPORT.md` and
-  `graphify-out/graph.html`
-
-Regenerate the local code graph after major source changes:
-
-```bash
-graphify update .
-graphify cluster-only .
+```text
+package.json
+src-tauri/Cargo.toml
+src-tauri/tauri.conf.json
 ```
 
----
+`npm run version:check` enforces the contract. Release CI also rejects a tag that does not exactly equal `v<project-version>`.
+
+The `0.2.0` promotion path is:
+
+```text
+v0.2.0-alpha.N -> v0.2.0-beta.N -> v0.2.0-rc.N -> v0.2.0
+```
+
+PRs use Conventional Commit-style titles because squash merge titles feed the generated release history.
 
 ## Packaging
 
-`npm run app:build` produces, on Linux: **AppImage**, **.deb** and **.rpm**
-(configured in `src-tauri/tauri.conf.json`). A pacman package can be added later.
-On current Arch systems, use `npm run app:build:arch`; it disables linuxdeploy's
-incompatible legacy strip step and supplies the empty loader directory expected
-by its GTK plugin. Regular Ubuntu/Debian and CI builds should use `app:build`.
+`npm run app:build` currently produces Linux **AppImage**, **.deb**, and **.rpm** bundles. Tagged releases upload those artifacts plus SHA-256 manifests. Native Arch/pacman repository packaging and signed APT/pacman repositories are later distribution milestones after the production/security gates pass.
 
----
+## Security model
 
-## Security model (and MVP limitations)
+Current protections:
 
-**What we do well today**
-- Passwords live in the **OS keyring (Secret Service)**, keyed
-  per server. SQLite stores only a `secret_ref`, never the secret.
-- Encrypted private keys use the SSH agent or the interactive SSH prompt; the
-  application does not persist key passphrases.
-- Passwords are fed to `ssh`/`scp` via `sshpass -e` (environment), never on the
-  process command line, and never logged.
-- The production WebView uses a restrictive Content Security Policy.
-- Private key **paths** are stored; key **contents** are not.
-- Destructive actions (service restart/stop and confirmation-gated runbook
-  steps) require explicit confirmation and show the exact command first.
+- Passwords are stored in the OS keyring and are not persisted as plaintext in SQLite.
+- SSH/SCP password auth uses `sshpass -e`, keeping the password out of argv.
+- FreeRDP stored passwords are delivered over stdin rather than `/p:<password>` argv.
+- FreeRDP uses certificate TOFU instead of unconditional certificate ignore.
+- Private-key paths, not key contents, are persisted.
+- Destructive service/runbook actions retain explicit confirmation boundaries.
+- The production WebView uses a restrictive CSP.
 
-**MVP limitations (be aware)**
-- `StrictHostKeyChecking=accept-new`: first-seen host keys are trusted
-  automatically (changes are still detected). A known-hosts management UI is TODO.
-- `FreeRDP` receives the password via `/p:` on its own command line — a known
-  FreeRDP limitation, not under our control.
-- No app-level master-password lock yet (keyring is the trust anchor).
-- RDP/VNC are launched as **external** windows; not embedded.
-- FTP credentials and data are plaintext on the network by protocol design.
-- Secrets masking in interactive terminal output is best-effort.
+Current release blockers:
 
-See [TODO.md](TODO.md) for the roadmap that hardens these.
+- SSH first contact still uses OpenSSH `StrictHostKeyChecking=accept-new`; explicit app-managed fingerprint trust is P0.
+- Runtime dependency/keyring readiness is not yet surfaced centrally at startup.
+- Central secret redaction is not yet guaranteed across every output/persistence/export path.
+- Stale sessions need deterministic startup reconciliation; tunnel reconciliation currently happens when tunnels are listed.
+- RDP/VNC remain external windows.
+- FTP is plaintext by protocol design.
+- Release artifacts have checksums but are not yet signed/notarized.
 
----
+Do not treat an alpha build as production-ready until the P0 gates in [TODO.md](TODO.md) are complete.
 
 ## License
 

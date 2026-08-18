@@ -8,6 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.23.1
+  RUST_VERSION: 1.97.1
+
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -30,16 +38,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install JS dependencies
         run: npm ci
+
+      - name: Validate release tag and project version
+        env:
+          REMOTEOPSX_RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run version:check
 
       - name: Release preflight
         run: |
@@ -48,6 +62,7 @@ jobs:
           npm run build
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo test --locked --manifest-path src-tauri/Cargo.toml
+          cargo build --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri bundles
         run: npm run app:build
@@ -73,6 +88,8 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             RemoteOpsX-x86_64.AppImage
             RemoteOpsX-SHA256SUMS-linux-x86_64.txt
@@ -88,24 +105,30 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install JS dependencies
         run: npm ci
 
+      - name: Validate release tag and project version
+        env:
+          REMOTEOPSX_RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run version:check
+
       - name: Release preflight
         run: |
-          npm audit --audit-level=high
           npm test
           npm run build
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo test --locked --manifest-path src-tauri/Cargo.toml
+          cargo build --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build macOS bundles
         run: npm run app:build
@@ -124,6 +147,7 @@ jobs:
       - name: Upload macOS release assets
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             RemoteOpsX-SHA256SUMS-macos.txt
             src-tauri/target/release/bundle/dmg/*.dmg
