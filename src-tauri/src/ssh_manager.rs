@@ -289,6 +289,11 @@ mod tests {
 
     #[test]
     fn jump_proxy_is_key_only_and_keeps_strict_trust() {
+        let known_hosts = std::env::temp_dir().join(format!(
+            "remoteopsx-ssh-manager-test-{}.known_hosts",
+            std::process::id()
+        ));
+        let _ = host_identity::init(known_hosts);
         let jump = JumpHostConfig {
             server_id: "s1".into(),
             host: "bastion.internal".into(),
