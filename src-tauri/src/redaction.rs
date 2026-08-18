@@ -1,8 +1,9 @@
 //! Central redaction for secrets that have entered the RemoteOpsX process.
 //!
-//! Vault reads/writes register values here. Any output, persisted runbook
-//! result, diagnostic export, or error path can then use one deterministic
-//! redaction function instead of implementing ad-hoc masking.
+//! Vault reads/writes register values here. Output, persisted runbook results,
+//! diagnostic exports, and error paths then use one deterministic masking
+//! layer. Persistence entry points can also reject user-authored content that
+//! contains a known credential instead of silently storing it in SQLite.
 
 use std::sync::RwLock;
 
@@ -19,23 +20,35 @@ pub fn register_secret(secret: &str) {
     if secret.len() < MIN_SECRET_LEN {
         return;
     }
-    let mut secrets = KNOWN_SECRETS.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut secrets = KNOWN_SECRETS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if !secrets.iter().any(|known| known == secret) {
         secrets.push(secret.to_string());
-        // Longest first prevents a short credential from partially masking a
-        // longer one and leaving a recognizable suffix.
         secrets.sort_by_key(|value| std::cmp::Reverse(value.len()));
     }
 }
 
 pub fn forget_secret(secret: &str) {
-    let mut secrets = KNOWN_SECRETS.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut secrets = KNOWN_SECRETS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     secrets.retain(|known| known != secret);
+}
+
+pub fn contains_known_secret(text: impl AsRef<str>) -> bool {
+    let value = text.as_ref();
+    let secrets = KNOWN_SECRETS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    secrets.iter().any(|secret| value.contains(secret))
 }
 
 pub fn redact(text: impl AsRef<str>) -> String {
     let mut value = text.as_ref().to_string();
-    let secrets = KNOWN_SECRETS.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let secrets = KNOWN_SECRETS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     for secret in secrets.iter() {
         if value.contains(secret) {
             value = value.replace(secret, MASK);
@@ -77,10 +90,19 @@ mod tests {
     }
 
     #[test]
+    fn detects_known_secret_before_persistence() {
+        reset_for_tests();
+        register_secret("database-canary-secret");
+        assert!(contains_known_secret("echo database-canary-secret"));
+        assert!(!contains_known_secret("echo safe"));
+    }
+
+    #[test]
     fn ignores_tiny_values_to_avoid_destroying_normal_output() {
         reset_for_tests();
         register_secret("abc");
         assert_eq!(redact("abc is common text"), "abc is common text");
+        assert!(!contains_known_secret("abc is common text"));
     }
 
     #[test]
