@@ -11,6 +11,7 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 
 ### Changed
 - Release tooling now treats `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` as one versioned product.
+- Node and Rust toolchains are pinned for CI and tagged release builds so toolchain drift is explicit and reviewable.
 
 ## [0.2.0-alpha.1] - 2026-08-18
 
