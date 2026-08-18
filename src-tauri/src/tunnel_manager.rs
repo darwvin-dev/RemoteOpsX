@@ -1,9 +1,8 @@
 //! SSH tunnel manager.
 //!
-//! MVP uses the system ssh client with `-L` (local forward), `-R` (remote
-//! forward) and `-D` (dynamic SOCKS) in `-N` mode. Each tunnel is a tracked
-//! child process; the registry lets the UI list and stop them. Profiles are
-//! persisted to SQLite by the caller.
+//! Uses the system SSH client with `-L`, `-R`, and `-D` in `-N` mode. Tunnel
+//! connections share the exact app-managed host-key policy used by terminal,
+//! exec, and SCP traffic.
 
 use std::collections::HashMap;
 use std::process::{Child, Command};
@@ -30,23 +29,17 @@ impl TunnelValidationError {
     }
 }
 
-/// Push auth-related ssh options for `server` onto `args`. Mirrors
-/// `ssh_manager`'s handling so tunnels get the same MaxAuthTries protection.
 fn push_auth_args(server: &Server, args: &mut Vec<String>) {
     if server.auth_type == "key" {
         if let Some(key) = &server.private_key_path {
             if !key.trim().is_empty() {
                 args.push("-i".into());
                 args.push(key.clone());
-                // Only use this key (avoid agent-key MaxAuthTries rejection).
                 args.push("-o".into());
                 args.push("IdentitiesOnly=yes".into());
             }
         }
     } else if server.auth_type == "password" {
-        // Without this, ssh still offers every ssh-agent key before falling
-        // back to password auth, which can exhaust the remote's
-        // MaxAuthTries ("Too many authentication failures") first.
         args.push("-o".into());
         args.push("PubkeyAuthentication=no".into());
     }
@@ -57,10 +50,7 @@ pub(crate) fn validate_tunnel(tunnel: &Tunnel) -> Result<(), TunnelValidationErr
         return Err(TunnelValidationError::new("id", "tunnel id is required"));
     }
     if tunnel.server_id.trim().is_empty() {
-        return Err(TunnelValidationError::new(
-            "server_id",
-            "server id is required",
-        ));
+        return Err(TunnelValidationError::new("server_id", "server id is required"));
     }
     if tunnel.local_port == 0 {
         return Err(TunnelValidationError::new(
@@ -106,19 +96,16 @@ impl TunnelManager {
         Self::default()
     }
 
-    /// Start a tunnel described by `tunnel` against `server`. The tunnel id is
-    /// used as the registry key.
     pub fn start(&self, server: &Server, tunnel: &Tunnel) -> Result<()> {
         validate_tunnel(tunnel)?;
-        let mut args: Vec<String> = vec![
-            "-N".into(),
-            "-o".into(),
-            "StrictHostKeyChecking=accept-new".into(),
+        let mut args: Vec<String> = vec!["-N".into()];
+        args.extend(ssh_manager::strict_host_key_args()?);
+        args.extend([
             "-o".into(),
             "ExitOnForwardFailure=yes".into(),
             "-p".into(),
             server.port.to_string(),
-        ];
+        ]);
 
         push_auth_args(server, &mut args);
 
@@ -128,31 +115,31 @@ impl TunnelManager {
             .unwrap_or_else(|| "127.0.0.1".into());
         match tunnel.r#type.as_str() {
             "local" => {
-                let rh = tunnel
+                let remote_host = tunnel
                     .remote_host
                     .clone()
                     .unwrap_or_else(|| "127.0.0.1".into());
-                let rp = tunnel
+                let remote_port = tunnel
                     .remote_port
                     .ok_or_else(|| anyhow!("remote_port required for local forward"))?;
                 args.push("-L".into());
                 args.push(format!(
                     "{}:{}:{}:{}",
-                    local_host, tunnel.local_port, rh, rp
+                    local_host, tunnel.local_port, remote_host, remote_port
                 ));
             }
             "remote" => {
-                let rh = tunnel
+                let remote_host = tunnel
                     .remote_host
                     .clone()
                     .unwrap_or_else(|| "127.0.0.1".into());
-                let rp = tunnel
+                let remote_port = tunnel
                     .remote_port
                     .ok_or_else(|| anyhow!("remote_port required for remote forward"))?;
                 args.push("-R".into());
                 args.push(format!(
                     "{}:{}:{}:{}",
-                    local_host, tunnel.local_port, rh, rp
+                    local_host, tunnel.local_port, remote_host, remote_port
                 ));
             }
             "dynamic" => {
@@ -165,7 +152,6 @@ impl TunnelManager {
         args.push(format!("{}@{}", server.username, server.host));
 
         let (program, full_args) = if server.auth_type == "password" {
-            // Reuse the password-wrapping logic for consistency.
             let mut wrapped = vec!["-e".to_string(), "ssh".to_string()];
             wrapped.extend(args);
             ("sshpass".to_string(), wrapped)
@@ -179,7 +165,7 @@ impl TunnelManager {
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| anyhow!("failed to start tunnel: {e}"))?;
+            .map_err(|error| anyhow!("failed to start tunnel: {error}"))?;
         for _ in 0..4 {
             std::thread::sleep(std::time::Duration::from_millis(50));
             if let Some(status) = child.try_wait()? {
@@ -190,15 +176,14 @@ impl TunnelManager {
         Ok(())
     }
 
-    /// Stop a running tunnel.
     pub fn stop(&self, id: &str) -> Result<()> {
         if let Some(mut child) = self.procs.lock().unwrap().remove(id) {
             let _ = child.kill();
+            let _ = child.wait();
         }
         Ok(())
     }
 
-    /// Return the set of tunnel ids currently alive (reaps exited ones).
     pub fn active_ids(&self) -> Vec<String> {
         let mut guard = self.procs.lock().unwrap();
         let mut alive = Vec::new();
@@ -206,13 +191,26 @@ impl TunnelManager {
         for (id, child) in guard.iter_mut() {
             match child.try_wait() {
                 Ok(Some(_)) => dead.push(id.clone()),
-                _ => alive.push(id.clone()),
+                Ok(None) => alive.push(id.clone()),
+                Err(_) => dead.push(id.clone()),
             }
         }
         for id in dead {
             guard.remove(&id);
         }
         alive
+    }
+}
+
+impl Drop for TunnelManager {
+    fn drop(&mut self) {
+        if let Ok(mut processes) = self.procs.lock() {
+            for (_, child) in processes.iter_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            processes.clear();
+        }
     }
 }
 
@@ -246,7 +244,7 @@ mod tests {
             username: "root".into(),
             protocols: vec!["ssh".into()],
             auth_type: auth_type.into(),
-            private_key_path: key_path.map(|s| s.to_string()),
+            private_key_path: key_path.map(|value| value.to_string()),
             tags: vec![],
             group_name: None,
             environment: "dev".into(),
@@ -257,31 +255,24 @@ mod tests {
     }
 
     fn has_opt(args: &[String], value: &str) -> bool {
-        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+        args.windows(2).any(|window| window[0] == "-o" && window[1] == value)
     }
 
     #[test]
     fn password_auth_tunnel_disables_pubkey_so_agent_keys_cant_exhaust_maxauthtries() {
-        let srv = server("password", None);
+        let server = server("password", None);
         let mut args = Vec::new();
-        push_auth_args(&srv, &mut args);
-
-        assert!(
-            has_opt(&args, "PubkeyAuthentication=no"),
-            "password-auth tunnels must disable pubkey auth, otherwise ssh \
-             offers every ssh-agent key first and a busy agent exhausts the \
-             remote's MaxAuthTries before the tunnel password is ever tried: {args:?}"
-        );
+        push_auth_args(&server, &mut args);
+        assert!(has_opt(&args, "PubkeyAuthentication=no"));
     }
 
     #[test]
     fn key_auth_tunnel_still_uses_identities_only() {
-        let srv = server("key", Some("/home/user/.ssh/id_ed25519"));
+        let server = server("key", Some("/home/user/.ssh/id_ed25519"));
         let mut args = Vec::new();
-        push_auth_args(&srv, &mut args);
-
+        push_auth_args(&server, &mut args);
         assert!(has_opt(&args, "IdentitiesOnly=yes"));
-        assert!(args.iter().any(|a| a == "/home/user/.ssh/id_ed25519"));
+        assert!(args.iter().any(|arg| arg == "/home/user/.ssh/id_ed25519"));
         assert!(!has_opt(&args, "PubkeyAuthentication=no"));
     }
 
