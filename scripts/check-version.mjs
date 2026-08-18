@@ -6,7 +6,11 @@ const tauri = JSON.parse(
 );
 const cargo = fs.readFileSync(new URL("../src-tauri/Cargo.toml", import.meta.url), "utf8");
 
-const packageSection = cargo.match(/^\[package\]\s*([\s\S]*?)(?=^\[|\z)/m)?.[1] ?? "";
+const packageMarker = "[package]";
+const packageStart = cargo.indexOf(packageMarker);
+const afterPackage = packageStart >= 0 ? cargo.slice(packageStart + packageMarker.length) : "";
+const nextSection = afterPackage.search(/^\[[^\n]+\]/m);
+const packageSection = nextSection >= 0 ? afterPackage.slice(0, nextSection) : afterPackage;
 const cargoVersion = packageSection.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 
 const versions = {
