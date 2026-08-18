@@ -1,0 +1,69 @@
+name: Phase3 Documentation Sync
+
+on:
+  push:
+    branches: [agent/operator-experience]
+
+permissions:
+  contents: write
+
+jobs:
+  docs:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Synchronize roadmap and public feature documentation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('TODO.md')
+          s = p.read_text()
+          replacements = {
+            '- ⬜ **Persistent SFTP subsystem** — replace per-operation `ssh`/`scp`; add progress, cancellation, recursive transfers, chmod and drag/drop.': '- ✅ **Persistent SFTP transfer subsystem** — strict per-server OpenSSH ControlMaster reuse, cancellable background upload/download jobs, recursive transfers, single-file byte progress, chmod and Tauri-native drag/drop queueing.',
+            '- ⬜ **Runbook editor** — validated form/YAML editor, variables, dry-run, import/export and partial retry from a failed step.': '- ✅ **Runbook Studio** — bounded YAML import/export, validation, variable rendering, non-executing dry-run preview, destructive/confirmation markers and retry from the first failed step.',
+            '- ⬜ **Tunnel resilience** — health checks, auto-reconnect, autostart-on-connect and explicit failure state.': '- ✅ **Tunnel resilience** — persisted autostart/auto-reconnect desired-state policies, reconciliation, explicit failed state and explicit Stop precedence.',
+            '- ⬜ **Health history** — bounded per-server time-series retention, custom thresholds and desktop/webhook alert routing.': '- 🚧 **Health history + alerts** — bounded 30-second/7-day per-server history, custom threshold/consecutive/cooldown rules, persisted acknowledgement and dashboard visualization are implemented. Desktop/webhook delivery remains planned.',
+            '- ⬜ **Import/export** — encrypted, versioned backup/restore of profiles, settings, runbooks and snippets without exporting keyring secrets by default.': '- ✅ **Import/export** — encrypted versioned workspace backup/restore for profiles, settings, runbooks, snippets, bastions, alert rules and tunnels; keyring secrets are never exported and password profiles require credential re-entry.',
+            '- ⬜ Broadcast-to-many commands with strong environment/risk safeguards and per-host result tracking.': '- ✅ Broadcast-to-many commands with a 50-host cap, bounded concurrency, independent production/destructive confirmations, known-secret rejection and persisted per-host result tracking.',
+          }
+          for old, new in replacements.items():
+            if old in s:
+              s = s.replace(old, new)
+          if '## Product experience' not in s:
+            insert = '''\n## Product experience\n- ✅ **Operations Dashboard** — fleet rollup from persisted health, alerts, tunnel state and recent automation, with direct server/SSH drill-down.\n- ✅ **Universal Command Palette** — fuzzy index across application actions, protocol-specific server actions, health/diagnostics, runbooks and snippets; snippet execution requires a focused target and confirmation.\n\n'''
+            s = s.replace('\n## P2 — transport and desktop expansion\n', insert + '## P2 — transport and desktop expansion\n')
+          p.write_text(s)
+
+          p = Path('README.md')
+          s = p.read_text()
+          old_status = 'The core operator workflows and the P0 implementation for explicit SSH host trust, runtime dependency preflight, restart reconciliation, and known-secret redaction are implemented. The remaining public-release blockers are the live SSH integration fixture, packaged-app E2E/security coverage, signed distribution, and repository-side enforcement of the documented branch-protection policy.'
+          new_status = 'The core operator workflows and the P0 implementation for explicit SSH host trust, runtime dependency preflight, restart reconciliation, known-secret redaction, bastion routing, and the live ephemeral-SSH integration fixture are implemented. Operator depth now includes historical health/alerts, persistent transfer queues, Runbook Studio, tunnel resilience, encrypted workspace backup, guarded multi-host operations, a live operations dashboard, and a universal command palette. The remaining public-release blockers are packaged-app E2E/security coverage, signed distribution, and repository-side enforcement of the documented branch-protection policy.'
+          if old_status in s:
+            s = s.replace(old_status, new_status)
+          anchor = '- **SSH tunnels** — local, remote, and dynamic SOCKS forwards with persisted records and live-process reconciliation.\n'
+          additions = '''- **Bastion routing** — key-auth jump hosts with explicit trust on both hops and shared routing across terminal, exec, health, runbooks, SFTP/SCP and tunnels.\n- **Health history + alerts** — bounded local history, threshold/consecutive/cooldown rules, persisted alert acknowledgement and dashboard rollups.\n- **Persistent transfers** — ControlMaster-backed SFTP/SCP queue with cancellation, recursive transfer, byte progress for single files, chmod and drag/drop.\n- **Runbook Studio** — YAML validation/import/export, variable-aware dry-run preview and retry from the first failed step.\n- **Operator Center + Dashboard** — fleet health, alerts, transfers, multi-host operations, tunnel policies and backup/restore in one local-first workspace.\n- **Multi-host operations** — bounded fan-out with production/destructive safety gates and per-host audit results.\n- **Encrypted workspace backup** — versioned encrypted export/import without keyring secret export; restored password profiles require credential re-entry.\n- **Universal command palette** — fuzzy actions across servers, protocols, health, diagnostics, runbooks, snippets and application workflows.\n'''
+          if additions not in s and anchor in s:
+            s = s.replace(anchor, anchor + additions)
+          s = s.replace('- Live ephemeral-SSH integration tests must verify key/password auth, PTY/exec/SCP/tunnel behavior, and host-key mismatch rejection against a real SSH server.\n', '')
+          p.write_text(s)
+
+          p = Path('CHANGELOG.md')
+          s = p.read_text()
+          anchor = '- Terminal palette and font changes apply live to existing SSH tabs without reconnecting the session.\n'
+          bullets = '''- Verified bastion routing shares strict app-owned host trust across SSH terminal, exec, health, runbooks, SCP/SFTP and tunnels.\n- Linux CI now exercises a real ephemeral target+bastion SSH fixture including key/password auth, PTY, SCP, forwarding, host-key mismatch replacement and secret redaction.\n- Operator Center adds bounded health history, persisted alert rules/events, persistent transfer queues, tunnel resilience, guarded multi-host execution and encrypted workspace backup/restore.\n- Runbook Studio adds YAML validation/import/export, variable-aware dry-run preview and retry from the first failed step.\n- The no-tab workspace is now a live operations dashboard, and Ctrl/Cmd+K indexes server protocol actions, health/diagnostics, runbooks, snippets and application actions.\n'''
+          if bullets not in s and anchor in s:
+            s = s.replace(anchor, anchor + bullets)
+          p.write_text(s)
+          PY
+      - name: Remove helper and commit documentation
+        run: |
+          git rm .github/workflows/phase3-docs-sync.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add TODO.md README.md CHANGELOG.md
+          git commit -m 'docs: sync completed operator roadmap'
+          git push origin HEAD:agent/operator-experience
