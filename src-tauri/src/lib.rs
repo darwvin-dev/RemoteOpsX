@@ -8,6 +8,7 @@ pub mod error;
 pub mod ftp_manager;
 pub mod health_collector;
 pub mod host_identity;
+pub mod jump_host;
 pub mod models;
 pub mod pty_manager;
 pub mod rdp_adapter;
@@ -30,6 +31,7 @@ use tauri::{AppHandle, Manager, State};
 
 use error::{CommandResult, DomainError};
 use health_collector::HealthSnapshot;
+use jump_host::JumpHostConfig;
 use models::*;
 use pty_manager::PtyManager;
 use ssh_keys::SshKeyInfo;
@@ -198,8 +200,79 @@ fn server_save(state: State<AppState>, mut input: ServerInput) -> CommandResult<
 fn server_delete(state: State<AppState>, id: String) -> CommandResult<()> {
     let _ = vault::delete_secret(&vault::secret_ref(&id));
     state.health.forget(&id);
+    jump_host::forget(&id);
     let conn = state.db.lock().unwrap();
     e(database::delete_server(&conn, &id))
+}
+
+// =================== Jump hosts / bastions ===================
+
+#[tauri::command]
+fn jump_host_get(state: State<AppState>, server_id: String) -> CommandResult<Option<JumpHostConfig>> {
+    let conn = state.db.lock().unwrap();
+    e(jump_host::get(&conn, &server_id))
+}
+
+#[tauri::command]
+fn jump_host_save(state: State<AppState>, config: JumpHostConfig) -> CommandResult<JumpHostConfig> {
+    let _ = load_server(&state, &config.server_id)?;
+    jump_host::validate(&config)
+        .map_err(|error| DomainError::validation("jump_host", error.to_string()))?;
+    reject_known_secret(
+        "jump_host",
+        &[
+            config.host.as_str(),
+            config.username.as_str(),
+            config.private_key_path.as_str(),
+        ]
+        .join("\n"),
+    )?;
+    let conn = state.db.lock().unwrap();
+    e(jump_host::save(&conn, &config))?;
+    Ok(config)
+}
+
+#[tauri::command]
+fn jump_host_delete(state: State<AppState>, server_id: String) -> CommandResult<()> {
+    let conn = state.db.lock().unwrap();
+    e(jump_host::delete(&conn, &server_id))
+}
+
+#[tauri::command]
+fn ssh_jump_host_identity_inspect(
+    state: State<AppState>,
+    server_id: String,
+) -> CommandResult<host_identity::HostIdentityReport> {
+    let conn = state.db.lock().unwrap();
+    let jump = e(jump_host::get(&conn, &server_id))?
+        .ok_or_else(|| DomainError::validation("jump_host", "no jump host configured"))?;
+    re(host_identity::inspect(&jump.host, jump.port))
+}
+
+#[tauri::command]
+fn ssh_jump_host_identity_trust(
+    state: State<AppState>,
+    server_id: String,
+    expected_fingerprint: String,
+    replace: bool,
+) -> CommandResult<host_identity::HostIdentityReport> {
+    let conn = state.db.lock().unwrap();
+    let jump = e(jump_host::get(&conn, &server_id))?
+        .ok_or_else(|| DomainError::validation("jump_host", "no jump host configured"))?;
+    re(host_identity::trust(
+        &jump.host,
+        jump.port,
+        &expected_fingerprint,
+        replace,
+    ))
+}
+
+#[tauri::command]
+fn ssh_jump_host_identity_remove(state: State<AppState>, server_id: String) -> CommandResult<()> {
+    let conn = state.db.lock().unwrap();
+    let jump = e(jump_host::get(&conn, &server_id))?
+        .ok_or_else(|| DomainError::validation("jump_host", "no jump host configured"))?;
+    re(host_identity::remove(&jump.host, jump.port))
 }
 
 // =================== SSH Terminal (PTY) ===================
@@ -277,7 +350,11 @@ fn ssh_host_identity_inspect(
     server_id: String,
 ) -> CommandResult<host_identity::HostIdentityReport> {
     let server = load_server(&state, &server_id)?;
-    re(host_identity::inspect(&server.host, server.port))
+    if let Some(jump) = jump_host::get_cached(&server_id) {
+        re(host_identity::inspect_via_jump(&server.host, server.port, &jump))
+    } else {
+        re(host_identity::inspect(&server.host, server.port))
+    }
 }
 
 #[tauri::command]
@@ -288,12 +365,22 @@ fn ssh_host_identity_trust(
     replace: bool,
 ) -> CommandResult<host_identity::HostIdentityReport> {
     let server = load_server(&state, &server_id)?;
-    re(host_identity::trust(
-        &server.host,
-        server.port,
-        &expected_fingerprint,
-        replace,
-    ))
+    if let Some(jump) = jump_host::get_cached(&server_id) {
+        re(host_identity::trust_via_jump(
+            &server.host,
+            server.port,
+            &jump,
+            &expected_fingerprint,
+            replace,
+        ))
+    } else {
+        re(host_identity::trust(
+            &server.host,
+            server.port,
+            &expected_fingerprint,
+            replace,
+        ))
+    }
 }
 
 #[tauri::command]
@@ -701,6 +788,7 @@ pub fn run() {
 
             let db_path = data_dir.join("remoteopsx.db");
             let conn = database::open(&db_path).expect("failed to open database");
+            jump_host::hydrate(&conn).expect("failed to initialize jump-host routes");
             let recovered = recovery::reconcile_startup(&conn)
                 .expect("failed to reconcile stale runtime state");
             if recovered.sessions_interrupted > 0
@@ -734,6 +822,12 @@ pub fn run() {
             server_get,
             server_save,
             server_delete,
+            jump_host_get,
+            jump_host_save,
+            jump_host_delete,
+            ssh_jump_host_identity_inspect,
+            ssh_jump_host_identity_trust,
+            ssh_jump_host_identity_remove,
             pty_spawn,
             pty_write,
             pty_resize,
