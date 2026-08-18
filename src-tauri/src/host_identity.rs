@@ -1,10 +1,10 @@
 //! App-managed SSH host identity trust.
 //!
 //! RemoteOpsX owns a dedicated known_hosts file under the application data
-//! directory. All SSH/SCP/tunnel transports use that file with
-//! StrictHostKeyChecking=yes. First contact therefore requires an explicit
-//! fingerprint review + trust action in the UI; changed keys remain blocked
-//! until the operator explicitly replaces the trusted identity.
+//! directory. All SSH/SCP/tunnel transports use that file with strict host
+//! verification. First contact therefore requires an explicit fingerprint
+//! review + trust action in the UI; changed keys remain blocked until the
+//! operator explicitly replaces the trusted identity.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -68,8 +68,23 @@ fn strict_options_for_path(path: &Path) -> Vec<String> {
     vec![
         "-o".into(),
         format!("UserKnownHostsFile={}", path.to_string_lossy()),
+        // Do not let system-wide known_hosts or a configured helper silently
+        // establish trust outside RemoteOpsX's explicit fingerprint workflow.
+        "-o".into(),
+        "GlobalKnownHostsFile=/dev/null".into(),
+        "-o".into(),
+        "KnownHostsCommand=none".into(),
         "-o".into(),
         "StrictHostKeyChecking=yes".into(),
+        // Secure SSHFP records and OpenSSH's host-key update extension are
+        // useful in other contexts, but both would create trust outside the
+        // app-managed known_hosts review boundary.
+        "-o".into(),
+        "VerifyHostKeyDNS=no".into(),
+        "-o".into(),
+        "UpdateHostKeys=no".into(),
+        "-o".into(),
+        "NoHostAuthenticationForLocalhost=no".into(),
     ]
 }
 
@@ -111,7 +126,10 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
         port,
         status: status.to_string(),
         candidates,
-        trusted_fingerprints: trusted.into_iter().map(|value| value.fingerprint).collect(),
+        trusted_fingerprints: trusted
+            .into_iter()
+            .map(|value| value.fingerprint)
+            .collect(),
     })
 }
 
@@ -312,9 +330,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strict_transport_options_require_explicit_trust() {
+    fn strict_transport_options_require_explicit_app_managed_trust() {
         let args = strict_options_for_path(Path::new("/tmp/remoteopsx-known-hosts"));
-        assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=yes"));
+        for required in [
+            "StrictHostKeyChecking=yes",
+            "GlobalKnownHostsFile=/dev/null",
+            "KnownHostsCommand=none",
+            "VerifyHostKeyDNS=no",
+            "UpdateHostKeys=no",
+            "NoHostAuthenticationForLocalhost=no",
+        ] {
+            assert!(args.iter().any(|arg| arg == required), "missing {required}");
+        }
         assert!(args
             .iter()
             .any(|arg| arg == "UserKnownHostsFile=/tmp/remoteopsx-known-hosts"));
