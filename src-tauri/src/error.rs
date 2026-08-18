@@ -3,6 +3,8 @@ use std::fmt::Display;
 
 use serde::Serialize;
 
+use crate::redaction;
+
 /// Stable, safe error payload returned by backend commands.
 #[derive(Debug, Clone, Serialize)]
 pub struct DomainError {
@@ -21,21 +23,20 @@ impl DomainError {
         context.insert("field".to_string(), field.into());
         Self {
             code: "validation.invalid_value",
-            message: message.into(),
+            message: redaction::redact(message.into()),
             retryable: false,
             correlation_id: uuid::Uuid::new_v4().to_string(),
             context,
         }
     }
 
-    /// A remote operation (ssh/scp/sftp) failed in an expected, recoverable
-    /// way. Unlike `internal`, the message is shown to the user verbatim:
-    /// it is ssh/scp's own stderr or a static description we wrote
-    /// ourselves, never a secret or an internal stack trace.
+    /// A remote operation failed in an expected, recoverable way. Diagnostics
+    /// remain visible to the operator, but every known in-process secret is
+    /// removed before the payload crosses IPC.
     pub fn remote(message: impl Into<String>) -> Self {
         Self {
             code: "remote.operation_failed",
-            message: message.into(),
+            message: redaction::redact(message.into()),
             retryable: true,
             correlation_id: uuid::Uuid::new_v4().to_string(),
             context: BTreeMap::new(),
@@ -44,7 +45,10 @@ impl DomainError {
 
     pub fn internal(error: impl Display) -> Self {
         let correlation_id = uuid::Uuid::new_v4().to_string();
-        eprintln!("internal backend error [{correlation_id}]: {error}");
+        eprintln!(
+            "internal backend error [{correlation_id}]: {}",
+            redaction::redact(error.to_string())
+        );
         Self {
             code: "internal.unexpected",
             message: "An unexpected internal error occurred.".to_string(),
@@ -58,6 +62,7 @@ impl DomainError {
 #[cfg(test)]
 mod tests {
     use super::DomainError;
+    use crate::redaction;
 
     #[test]
     fn validation_error_serializes_stable_contract_and_field_context() {
@@ -76,22 +81,25 @@ mod tests {
     }
 
     #[test]
-    fn remote_error_preserves_diagnostic_message_for_the_user() {
+    fn remote_error_preserves_diagnostic_but_masks_known_secret() {
+        redaction::reset_for_tests();
+        redaction::register_secret("secret-canary-value");
         let error = DomainError::remote(
-            "Received disconnect from 10.0.0.1 port 22:2: Too many authentication failures",
+            "Permission denied for secret-canary-value at 10.0.0.1 port 22",
         );
 
         assert_eq!(error.code, "remote.operation_failed");
         assert!(error.retryable);
-        assert_eq!(
-            error.message,
-            "Received disconnect from 10.0.0.1 port 22:2: Too many authentication failures"
-        );
+        assert!(error.message.contains("Permission denied"));
+        assert!(!error.message.contains("secret-canary-value"));
+        assert!(error.message.contains("••••••"));
         assert!(uuid::Uuid::parse_str(&error.correlation_id).is_ok());
     }
 
     #[test]
     fn internal_error_serialization_never_exposes_diagnostics() {
+        redaction::reset_for_tests();
+        redaction::register_secret("secret-canary-value");
         let error = DomainError::internal("secret-canary-value");
         assert_eq!(error.message, "An unexpected internal error occurred.");
         assert!(!error.retryable);
@@ -99,7 +107,6 @@ mod tests {
         assert!(uuid::Uuid::parse_str(&error.correlation_id).is_ok());
 
         let serialized = serde_json::to_string(&error).expect("internal error should serialize");
-
         assert!(!serialized.contains("secret-canary-value"));
         assert!(serialized.contains("internal.unexpected"));
     }
