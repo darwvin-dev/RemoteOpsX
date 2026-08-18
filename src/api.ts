@@ -10,10 +10,12 @@ import type {
   CommandSnippetInput,
   CommandOutput,
   HealthSnapshot,
+  HostIdentityReport,
   RemoteFile,
   Runbook,
   RunbookRun,
   RunbookSpec,
+  RuntimePreflightReport,
   SessionRecord,
   RunbookStep,
   Server,
@@ -56,6 +58,15 @@ export const ptyClose = (sessionId: string) => invoke<void>("pty_close", { sessi
 export const sshKeysList = () => invoke<SshKeyInfo[]>("ssh_keys_list");
 export const sshKeyInstall = (serverId: string, privateKeyPath: string) =>
   invoke<CommandOutput>("ssh_key_install", { serverId, privateKeyPath });
+
+// ---- Runtime / SSH trust ----
+export const runtimePreflight = () => invoke<RuntimePreflightReport>("runtime_preflight");
+export const sshHostIdentityInspect = (serverId: string) =>
+  invoke<HostIdentityReport>("ssh_host_identity_inspect", { serverId });
+export const sshHostIdentityTrust = (serverId: string, expectedFingerprint: string, replace = false) =>
+  invoke<HostIdentityReport>("ssh_host_identity_trust", { serverId, expectedFingerprint, replace });
+export const sshHostIdentityRemove = (serverId: string) =>
+  invoke<void>("ssh_host_identity_remove", { serverId });
 
 // ---- Health ----
 export const healthCollect = (serverId: string) => invoke<HealthSnapshot>("health_collect", { serverId });
