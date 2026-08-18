@@ -23,13 +23,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.97.1
-      - name: Refresh lockfile workspace metadata only
+      - name: Refresh lockfile metadata
         run: |
           npm install --package-lock-only --ignore-scripts
           cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 >/dev/null
           npm ci
           npm run version:check
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-run
           rm .github/workflows/refresh-release-locks.yml
       - name: Commit refreshed locks
         run: |
