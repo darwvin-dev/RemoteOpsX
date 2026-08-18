@@ -43,31 +43,31 @@ pub fn launch(server: &Server, opts: &VncOptions) -> Result<()> {
 
     #[cfg(not(target_os = "macos"))]
     {
-    let bin = vnc_bin().ok_or_else(|| {
-        anyhow!("No VNC viewer found. Install one (e.g. `pacman -S tigervnc` / `apt install tigervnc-viewer`).")
-    })?;
+        let bin = vnc_bin().ok_or_else(|| {
+            anyhow!("No VNC viewer found. Install one (e.g. `pacman -S tigervnc` / `apt install tigervnc-viewer`).")
+        })?;
 
-    let target = format!("{}:{}", server.host, server.vnc_port());
+        let target = format!("{}:{}", server.host, server.vnc_port());
 
-    let mut cmd = Command::new(bin);
-    match bin {
-        "remmina" => {
-            cmd.arg(format!("vnc://{target}"));
-        }
-        "vinagre" => {
-            cmd.arg(format!("vnc://{target}"));
-        }
-        _ => {
-            // tigervnc / tightvnc style: `vncviewer host:port`
-            if opts.fullscreen {
-                cmd.arg("-FullScreen");
+        let mut cmd = Command::new(bin);
+        match bin {
+            "remmina" => {
+                cmd.arg(format!("vnc://{target}"));
             }
-            cmd.arg(&target);
+            "vinagre" => {
+                cmd.arg(format!("vnc://{target}"));
+            }
+            _ => {
+                // tigervnc / tightvnc style: `vncviewer host:port`
+                if opts.fullscreen {
+                    cmd.arg("-FullScreen");
+                }
+                cmd.arg(&target);
+            }
         }
-    }
 
-    cmd.spawn()
-        .map_err(|e| anyhow!("failed to launch {bin}: {e}"))?;
-    Ok(())
+        cmd.spawn()
+            .map_err(|e| anyhow!("failed to launch {bin}: {e}"))?;
+        Ok(())
     }
 }
