@@ -13,7 +13,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { ToastStack } from "./components/ToastStack";
 import { SettingsModal } from "./components/SettingsModal";
 import { useSettingsStore } from "./settingsStore";
-import { resolveTheme, SYSTEM_THEME_QUERY } from "./theme";
+import { resolveTheme, resolveThemePreset, SYSTEM_THEME_QUERY } from "./theme";
 
 export default function App() {
   const loadServers = useStore((s) => s.loadServers);
@@ -22,7 +22,7 @@ export default function App() {
   const alerts = useStore((s) => s.alerts);
   const setBottomPanel = useStore((s) => s.setBottomPanel);
   const rightCollapsed = useStore((s) => s.tabs.length === 0 && s.focusedServerId === null);
-  const [editing, setEditing] = useState<Server | null | undefined>(undefined); // undefined = closed
+  const [editing, setEditing] = useState<Server | null | undefined>(undefined);
   const [initialFolder, setInitialFolder] = useState<string | undefined>(undefined);
   const [showRunbooks, setShowRunbooks] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
@@ -33,6 +33,7 @@ export default function App() {
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const loadSettings = useSettingsStore((state) => state.load);
   const theme = useSettingsStore((state) => state.settings.theme);
+  const uiFont = useSettingsStore((state) => state.settings.ui_font);
   const settingsInitialized = useSettingsStore((state) => state.initialized);
   const settingsLoadFailed = useSettingsStore((state) => state.error !== null && state.initialized);
 
@@ -58,14 +59,16 @@ export default function App() {
 
   useLayoutEffect(() => {
     const media = window.matchMedia(SYSTEM_THEME_QUERY);
-    const applyTheme = () => {
+    const applyAppearance = () => {
       document.documentElement.dataset.theme = resolveTheme(theme, media.matches);
+      document.documentElement.dataset.themePreset = resolveThemePreset(theme, media.matches);
+      document.documentElement.dataset.uiFont = uiFont;
     };
-    applyTheme();
+    applyAppearance();
     if (theme !== "system") return;
-    media.addEventListener("change", applyTheme);
-    return () => media.removeEventListener("change", applyTheme);
-  }, [settingsInitialized, theme]);
+    media.addEventListener("change", applyAppearance);
+    return () => media.removeEventListener("change", applyAppearance);
+  }, [settingsInitialized, theme, uiFont]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
