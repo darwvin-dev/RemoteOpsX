@@ -31,6 +31,8 @@ describe("settings contracts", () => {
     expect(DEFAULT_SETTINGS).toEqual({
       schema_version: 1,
       theme: "system",
+      ui_font: "system",
+      terminal_font: "jetbrains_mono",
       default_ports: { ssh: 22, ftp: 21, rdp: 3389, vnc: 5900 },
       health_refresh_interval_ms: 3000,
       history_retention_days: 90,
@@ -56,6 +58,11 @@ describe("settings contracts", () => {
   it.each([
     ["schema_version", (settings: AppSettings): void => { settings.schema_version = 2; }],
     ["theme", (settings: AppSettings): void => { (settings as { theme: string }).theme = "blue"; }],
+    ["ui_font", (settings: AppSettings): void => { (settings as { ui_font: string }).ui_font = "comic_sans"; }],
+    [
+      "terminal_font",
+      (settings: AppSettings): void => { (settings as { terminal_font: string }).terminal_font = "unknown_mono"; },
+    ],
     [
       "transfer_conflict_policy",
       (settings: AppSettings): void => {
@@ -91,6 +98,20 @@ describe("settings contracts", () => {
       context: { field },
     });
     expect(rawInvoke).not.toHaveBeenCalled();
+  });
+
+  it("accepts all production appearance presets before invoking Tauri", async () => {
+    rawInvoke.mockImplementation(async (_command: string, payload: { settings: AppSettings }) => payload.settings);
+    for (const theme of ["nord", "dracula", "tokyo_night", "solarized_dark", "solarized_light"] as const) {
+      const settings: AppSettings = {
+        ...DEFAULT_SETTINGS,
+        theme,
+        ui_font: "ibm_plex_sans",
+        terminal_font: "cascadia_code",
+        default_ports: { ...DEFAULT_SETTINGS.default_ports },
+      };
+      await expect(settingsSave(settings)).resolves.toMatchObject({ theme });
+    }
   });
 
   it("normalizes structured invoke rejections without losing transport metadata", () => {
@@ -223,7 +244,7 @@ describe("settings state", () => {
 
   it("loads, patches, and saves backend-returned settings", async () => {
     const loaded = darkSettings();
-    const saved = { ...loaded, theme: "light" as const };
+    const saved = { ...loaded, theme: "light" as const, ui_font: "inter" as const };
     const store = createSettingsState({
       load: async () => loaded,
       save: async () => saved,
@@ -233,7 +254,7 @@ describe("settings state", () => {
     await store.getState().load();
     expect(store.getState()).toMatchObject({ settings: loaded, persisted: loaded, dirty: false, initialized: true });
 
-    store.getState().patch({ theme: "light" });
+    store.getState().patch({ theme: "light", ui_font: "inter" });
     expect(store.getState()).toMatchObject({ settings: saved, persisted: loaded, dirty: true });
 
     await store.getState().save();
@@ -274,7 +295,7 @@ describe("settings state", () => {
     const store = createSettingsState({ load: async () => loaded, save: async (settings) => settings });
 
     await store.getState().load();
-    store.getState().patch({ default_ports: { ssh: 2222 } });
+    store.getState().patch({ default_ports: { ssh: 2222 }, terminal_font: "fira_code" });
     store.getState().reset();
 
     expect(store.getState()).toMatchObject({ settings: loaded, persisted: loaded, dirty: false, error: null });
