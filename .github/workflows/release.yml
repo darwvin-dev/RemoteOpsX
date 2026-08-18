@@ -11,8 +11,9 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Tauri system dependencies
         run: |
@@ -28,15 +29,25 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
 
       - name: Install JS dependencies
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: Release preflight
+        run: |
+          npm audit --audit-level=high
+          npm test
+          npm run build
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri bundles
         run: npm run app:build
@@ -44,39 +55,76 @@ jobs:
       - name: Normalize AppImage name
         run: |
           appimage="$(find src-tauri/target/release/bundle/appimage -name '*.AppImage' | head -n1)"
+          test -n "$appimage"
           cp "$appimage" RemoteOpsX-x86_64.AppImage
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          shopt -s nullglob
+          assets=(
+            RemoteOpsX-x86_64.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+          )
+          test "${#assets[@]}" -gt 0
+          sha256sum "${assets[@]}" > RemoteOpsX-SHA256SUMS-linux-x86_64.txt
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             RemoteOpsX-x86_64.AppImage
+            RemoteOpsX-SHA256SUMS-linux-x86_64.txt
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
 
   macos:
     runs-on: macos-14
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
 
       - name: Install JS dependencies
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: Release preflight
+        run: |
+          npm audit --audit-level=high
+          npm test
+          npm run build
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build macOS bundles
         run: npm run app:build
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          shopt -s nullglob
+          assets=(
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+          )
+          test "${#assets[@]}" -gt 0
+          shasum -a 256 "${assets[@]}" > RemoteOpsX-SHA256SUMS-macos.txt
 
       - name: Upload macOS release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            RemoteOpsX-SHA256SUMS-macos.txt
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app.tar.gz

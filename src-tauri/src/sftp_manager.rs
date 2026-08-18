@@ -226,7 +226,8 @@ mod tests {
     #[test]
     fn parses_directories_and_strips_symlink_targets() {
         let directory = parse_ls_line("drwxr-xr-x  2 root root 4096 1710000000 releases").unwrap();
-        let symlink = parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
+        let symlink =
+            parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
         assert!(directory.is_dir);
         assert_eq!(symlink.name, "current");
     }
