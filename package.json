@@ -1,13 +1,17 @@
 {
   "name": "remoteopsx",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.1",
   "type": "module",
   "description": "RemoteOpsX - a unified Linux remote operations workspace (SSH/SFTP/RDP/VNC + live server health + runbooks)",
+  "engines": {
+    "node": "22.23.1"
+  },
   "scripts": {
     "dev": "vite",
     "test": "vitest run",
     "build": "tsc --noEmit && vite build",
+    "version:check": "node scripts/check-version.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev",
