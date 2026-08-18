@@ -47,7 +47,9 @@ pub struct BackupRestoreReport {
 
 fn openssl(input: &[u8], password: &str, decrypt: bool) -> Result<Vec<u8>> {
     if password.len() < 10 {
-        return Err(anyhow!("backup passphrase must contain at least 10 characters"));
+        return Err(anyhow!(
+            "backup passphrase must contain at least 10 characters"
+        ));
     }
     redaction::register_secret(password);
     let mut command = Command::new("openssl");
@@ -134,9 +136,15 @@ pub fn export_encrypted(conn: &Connection, path: &str, password: &str) -> Result
 
 fn validate_backup(backup: &WorkspaceBackup) -> Result<()> {
     if backup.version != 1 {
-        return Err(anyhow!("unsupported RemoteOpsX backup version {}", backup.version));
+        return Err(anyhow!(
+            "unsupported RemoteOpsX backup version {}",
+            backup.version
+        ));
     }
-    backup.settings.validate().map_err(|error| anyhow!(error.to_string()))?;
+    backup
+        .settings
+        .validate()
+        .map_err(|error| anyhow!(error.to_string()))?;
     for server in &backup.servers {
         let input = server_input(server);
         database::validate_server_input(&input)?;

@@ -13,8 +13,8 @@ use crate::operator_data::{
 use crate::transfer_manager::{TransferJob, TransferRequest};
 use crate::workspace_backup::BackupRestoreReport;
 use crate::{
-    database, jump_host, multi_host, operator_data, redaction, transfer_manager,
-    tunnel_resilience, workspace_backup, AppState,
+    database, jump_host, multi_host, operator_data, redaction, transfer_manager, tunnel_resilience,
+    workspace_backup, AppState,
 };
 
 static BOOTSTRAPPED: AtomicBool = AtomicBool::new(false);
@@ -37,11 +37,7 @@ pub fn operator_bootstrap(state: State<AppState>) -> CommandResult<OperatorBoots
     let startup = !BOOTSTRAPPED.swap(true, Ordering::SeqCst);
     let conn = state.db.lock().unwrap();
     internal(operator_data::ensure_schema(&conn))?;
-    let tunnel_reconcile = internal(tunnel_resilience::reconcile(
-        &conn,
-        &state.tunnels,
-        startup,
-    ))?;
+    let tunnel_reconcile = internal(tunnel_resilience::reconcile(&conn, &state.tunnels, startup))?;
     Ok(OperatorBootstrapReport { tunnel_reconcile })
 }
 
@@ -83,10 +79,7 @@ pub fn alert_rules_list(state: State<AppState>) -> CommandResult<Vec<AlertRule>>
 }
 
 #[tauri::command]
-pub fn alert_rule_save(
-    state: State<AppState>,
-    input: AlertRuleInput,
-) -> CommandResult<AlertRule> {
+pub fn alert_rule_save(state: State<AppState>, input: AlertRuleInput) -> CommandResult<AlertRule> {
     let conn = state.db.lock().unwrap();
     internal(operator_data::save_alert_rule(&conn, &input))
 }
@@ -221,7 +214,11 @@ pub fn workspace_backup_export(
     passphrase: String,
 ) -> CommandResult<()> {
     let conn = state.db.lock().unwrap();
-    internal(workspace_backup::export_encrypted(&conn, &path, &passphrase))
+    internal(workspace_backup::export_encrypted(
+        &conn,
+        &path,
+        &passphrase,
+    ))
 }
 
 #[tauri::command]

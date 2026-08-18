@@ -449,9 +449,10 @@ fn evaluate_alerts(
     let rules = alert_rules(conn)?;
     let history = health_history(conn, server_id, 20)?;
     let mut fired = Vec::new();
-    for rule in rules.into_iter().filter(|rule| {
-        rule.enabled && rule.server_id.as_deref().map_or(true, |id| id == server_id)
-    }) {
+    for rule in rules
+        .into_iter()
+        .filter(|rule| rule.enabled && rule.server_id.as_deref().map_or(true, |id| id == server_id))
+    {
         let current = metric_value(&rule, snapshot);
         if !matches_threshold(&rule, current) || alert_is_in_cooldown(conn, &rule, server_id)? {
             continue;

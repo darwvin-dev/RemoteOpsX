@@ -48,21 +48,33 @@ pub fn validate(request: &MultiHostRequest, servers: &[Server]) -> Result<()> {
         return Err(anyhow!("select at least one server"));
     }
     if request.server_ids.len() > MAX_TARGETS || servers.len() > MAX_TARGETS {
-        return Err(anyhow!("multi-host operations are limited to {MAX_TARGETS} targets"));
+        return Err(anyhow!(
+            "multi-host operations are limited to {MAX_TARGETS} targets"
+        ));
     }
     if request.command.trim().is_empty() || request.command.len() > MAX_COMMAND_BYTES {
-        return Err(anyhow!("command must contain 1 to {MAX_COMMAND_BYTES} bytes"));
+        return Err(anyhow!(
+            "command must contain 1 to {MAX_COMMAND_BYTES} bytes"
+        ));
     }
     if !(1..=MAX_CONCURRENCY).contains(&request.concurrency) {
-        return Err(anyhow!("concurrency must be between 1 and {MAX_CONCURRENCY}"));
+        return Err(anyhow!(
+            "concurrency must be between 1 and {MAX_CONCURRENCY}"
+        ));
     }
-    if servers.iter().any(|server| server.environment == "production")
+    if servers
+        .iter()
+        .any(|server| server.environment == "production")
         && !request.production_confirmed
     {
-        return Err(anyhow!("production targets require explicit production confirmation"));
+        return Err(anyhow!(
+            "production targets require explicit production confirmation"
+        ));
     }
     if looks_destructive(&request.command) && !request.destructive_confirmed {
-        return Err(anyhow!("destructive commands require an additional explicit confirmation"));
+        return Err(anyhow!(
+            "destructive commands require an additional explicit confirmation"
+        ));
     }
     Ok(())
 }
@@ -112,7 +124,10 @@ pub fn execute(request: &MultiHostRequest, servers: Vec<Server>) -> Result<Multi
         results.extend(batch_results);
     }
 
-    let successes = results.iter().filter(|result| result.output.success).count();
+    let successes = results
+        .iter()
+        .filter(|result| result.output.success)
+        .count();
     let status = if successes == results.len() {
         "success"
     } else if successes == 0 {

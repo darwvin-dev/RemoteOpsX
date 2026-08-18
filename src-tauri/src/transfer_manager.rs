@@ -71,7 +71,8 @@ pub struct TransferManager {
 
 impl Default for TransferManager {
     fn default() -> Self {
-        let control_dir = std::env::temp_dir().join(format!("remoteopsx-ctl-{}", std::process::id()));
+        let control_dir =
+            std::env::temp_dir().join(format!("remoteopsx-ctl-{}", std::process::id()));
         let _ = fs::create_dir_all(&control_dir);
         Self {
             masters: Mutex::new(HashMap::new()),
@@ -177,16 +178,23 @@ impl TransferManager {
                 return Ok(control_path);
             }
             if let Some(status) = child.try_wait()? {
-                return Err(anyhow!("persistent SSH master exited during startup: {status}"));
+                return Err(anyhow!(
+                    "persistent SSH master exited during startup: {status}"
+                ));
             }
         }
         let _ = child.kill();
         let _ = child.wait();
-        Err(anyhow!("persistent SSH master did not create its control socket"))
+        Err(anyhow!(
+            "persistent SSH master did not create its control socket"
+        ))
     }
 
     fn local_file_size(path: &str) -> Option<u64> {
-        fs::metadata(path).ok().filter(|meta| meta.is_file()).map(|meta| meta.len())
+        fs::metadata(path)
+            .ok()
+            .filter(|meta| meta.is_file())
+            .map(|meta| meta.len())
     }
 
     fn remote_file_size(server: &Server, control_path: &Path, path: &str) -> Option<u64> {
@@ -211,7 +219,10 @@ impl TransferManager {
     }
 
     fn basename(path: &str) -> Option<&str> {
-        path.trim_end_matches('/').rsplit('/').next().filter(|value| !value.is_empty())
+        path.trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .filter(|value| !value.is_empty())
     }
 
     pub fn start(&self, server: &Server, request: TransferRequest) -> Result<TransferJob> {
@@ -287,7 +298,10 @@ impl TransferManager {
         };
 
         let mut command = Command::new("scp");
-        command.args(args).stdout(Stdio::null()).stderr(Stdio::piped());
+        command
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
         ssh_manager::apply_password_env(&mut command, server);
         let child = command.spawn()?;
         let job = TransferJob {
@@ -350,12 +364,11 @@ impl TransferManager {
             if let Some(job) = jobs.get_mut(&id) {
                 if let Some(total) = job.total_bytes.filter(|total| *total > 0) {
                     let transferred = match job.direction {
-                        TransferDirection::Upload => process
-                            .progress_probe_path
-                            .as_deref()
-                            .and_then(|path| {
+                        TransferDirection::Upload => {
+                            process.progress_probe_path.as_deref().and_then(|path| {
                                 Self::remote_file_size(&process.server, &process.control_path, path)
-                            }),
+                            })
+                        }
                         TransferDirection::Download => process
                             .progress_probe_path
                             .as_deref()
