@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSettingsStore } from "../settingsStore";
-import type { DefaultPorts, Theme, TransferConflictPolicy } from "../settings";
+import type {
+  DefaultPorts,
+  TerminalFont,
+  Theme,
+  TransferConflictPolicy,
+  UiFont,
+} from "../settings";
+import {
+  TERMINAL_FONT_OPTIONS,
+  THEME_OPTIONS,
+  UI_FONT_OPTIONS,
+  terminalFontStack,
+  uiFontStack,
+} from "../theme";
 
 interface Props {
   onClose: () => void;
@@ -46,6 +59,7 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<NumericKey, string>>>({});
   const draftsDirty = JSON.stringify(drafts) !== JSON.stringify(numericDrafts(settings));
   const hasUnsavedChanges = dirty || draftsDirty;
+  const selectedTheme = THEME_OPTIONS.find((option) => option.value === settings.theme);
 
   const discardChanges = useCallback(() => {
     if (saving || loading) return;
@@ -117,13 +131,21 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
 
   function commitNumber(key: NumericKey): boolean {
     const limits: Record<NumericKey, [number, number]> = {
-      ssh: [1, 65_535], ftp: [1, 65_535], rdp: [1, 65_535], vnc: [1, 65_535],
-      health: [1, 60], history: [1, 3650], lock: [1, 1440],
+      ssh: [1, 65_535],
+      ftp: [1, 65_535],
+      rdp: [1, 65_535],
+      vnc: [1, 65_535],
+      health: [1, 60],
+      history: [1, 3650],
+      lock: [1, 1440],
     };
     const value = Number(drafts[key]);
     const [minimum, maximum] = limits[key];
     if (drafts[key].trim() === "" || !Number.isInteger(value) || value < minimum || value > maximum) {
-      setFieldErrors((current) => ({ ...current, [key]: `Enter a whole number from ${minimum} to ${maximum}.` }));
+      setFieldErrors((current) => ({
+        ...current,
+        [key]: `Enter a whole number from ${minimum} to ${maximum}.`,
+      }));
       return false;
     }
     if (key === "health") patch({ health_refresh_interval_ms: value * 1000 });
@@ -138,7 +160,8 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
     event.preventDefault();
     if (loading || saving || submitInFlightRef.current) return;
     const valid = (["ssh", "ftp", "rdp", "vnc", "health", "history", "lock"] as NumericKey[])
-      .map(commitNumber).every(Boolean);
+      .map(commitNumber)
+      .every(Boolean);
     if (!valid || !useSettingsStore.getState().dirty) return;
     submitInFlightRef.current = true;
     try {
@@ -153,7 +176,14 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
 
   return (
     <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
-      <form ref={dialogRef} className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onSubmit={submit}>
+      <form
+        ref={dialogRef}
+        className="modal settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onSubmit={submit}
+      >
         <div className="modal-head">
           <div>
             <span className="eyebrow">Application</span>
@@ -163,86 +193,169 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
         </div>
         <fieldset className="settings-fieldset" disabled={loading || saving}>
           <div className="modal-body settings-body" aria-busy={loading || saving}>
-          <section className="settings-section" aria-labelledby="appearance-heading">
-            <h3 id="appearance-heading">Appearance</h3>
-            <div>
-              <label htmlFor="settings-theme">Theme</label>
-              <select id="settings-theme" value={settings.theme} onChange={(event) => patch({ theme: event.target.value as Theme })}>
-                <option value="system">Follow system</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
-            </div>
-          </section>
-
-          <section className="settings-section" aria-labelledby="connections-heading">
-            <h3 id="connections-heading">Connection defaults</h3>
-            <div className="settings-grid ports-grid">
-              {PORTS.map(({ key, label }) => (
-                <div key={key}>
-                  <label htmlFor={`settings-port-${key}`}>{label}</label>
-                  <input id={`settings-port-${key}`} type="number" min={1} max={65535} step={1} required value={drafts[key]}
-                    aria-invalid={fieldErrors[key] ? "true" : undefined} aria-describedby={fieldErrors[key] ? `settings-${key}-error` : undefined}
-                    onChange={(event) => editNumber(key, event.target.value)} onBlur={() => commitNumber(key)} />
-                  {fieldErrors[key] ? <small id={`settings-${key}-error`} className="field-error">{fieldErrors[key]}</small> : null}
+            <section className="settings-section" aria-labelledby="appearance-heading">
+              <h3 id="appearance-heading">Appearance</h3>
+              <div className="appearance-grid">
+                <div className="theme-setting">
+                  <label htmlFor="settings-theme">Color theme</label>
+                  <select
+                    id="settings-theme"
+                    value={settings.theme}
+                    onChange={(event) => patch({ theme: event.target.value as Theme })}
+                  >
+                    {THEME_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <small className="appearance-help">{selectedTheme?.description}</small>
                 </div>
-              ))}
-            </div>
-          </section>
+                <div>
+                  <label htmlFor="settings-ui-font">Interface font</label>
+                  <select
+                    id="settings-ui-font"
+                    value={settings.ui_font}
+                    onChange={(event) => patch({ ui_font: event.target.value as UiFont })}
+                  >
+                    {UI_FONT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <div className="font-preview" style={{ fontFamily: uiFontStack(settings.ui_font) }}>
+                    RemoteOpsX · Servers · Health · Runbooks
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="settings-terminal-font">Terminal font</label>
+                  <select
+                    id="settings-terminal-font"
+                    value={settings.terminal_font}
+                    onChange={(event) => patch({ terminal_font: event.target.value as TerminalFont })}
+                  >
+                    {TERMINAL_FONT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <div className="font-preview mono" style={{ fontFamily: terminalFontStack(settings.terminal_font) }}>
+                    user@server:~$ systemctl status
+                  </div>
+                </div>
+              </div>
+              <small className="appearance-help">
+                Font presets use locally installed fonts and automatically fall back to a safe system family.
+              </small>
+            </section>
 
-          <section className="settings-section" aria-labelledby="behavior-heading">
-            <h3 id="behavior-heading">Behavior and retention</h3>
-            <div className="settings-grid">
-              <div>
-                <label htmlFor="settings-health">Health refresh (seconds)</label>
-                <input id="settings-health" type="number" min={1} max={60} step={1} required value={drafts.health}
-                  aria-invalid={fieldErrors.health ? "true" : undefined} aria-describedby={fieldErrors.health ? "settings-health-error" : undefined}
-                  onChange={(event) => editNumber("health", event.target.value)} onBlur={() => commitNumber("health")} />
-                {fieldErrors.health ? <small id="settings-health-error" className="field-error">{fieldErrors.health}</small> : null}
+            <section className="settings-section" aria-labelledby="connections-heading">
+              <h3 id="connections-heading">Connection defaults</h3>
+              <div className="settings-grid ports-grid">
+                {PORTS.map(({ key, label }) => (
+                  <div key={key}>
+                    <label htmlFor={`settings-port-${key}`}>{label}</label>
+                    <input
+                      id={`settings-port-${key}`}
+                      type="number"
+                      min={1}
+                      max={65535}
+                      step={1}
+                      required
+                      value={drafts[key]}
+                      aria-invalid={fieldErrors[key] ? "true" : undefined}
+                      aria-describedby={fieldErrors[key] ? `settings-${key}-error` : undefined}
+                      onChange={(event) => editNumber(key, event.target.value)}
+                      onBlur={() => commitNumber(key)}
+                    />
+                    {fieldErrors[key] ? <small id={`settings-${key}-error`} className="field-error">{fieldErrors[key]}</small> : null}
+                  </div>
+                ))}
               </div>
-              <div>
-                <label htmlFor="settings-history">History retention (days)</label>
-                <input id="settings-history" type="number" min={1} max={3650} step={1} required value={drafts.history}
-                  aria-invalid={fieldErrors.history ? "true" : undefined} aria-describedby={fieldErrors.history ? "settings-history-error" : undefined}
-                  onChange={(event) => editNumber("history", event.target.value)} onBlur={() => commitNumber("history")} />
-                {fieldErrors.history ? <small id="settings-history-error" className="field-error">{fieldErrors.history}</small> : null}
-              </div>
-              <div>
-                <label htmlFor="settings-lock">App lock timeout (minutes)</label>
-                <input id="settings-lock" type="number" min={1} max={1440} step={1} required value={drafts.lock}
-                  aria-invalid={fieldErrors.lock ? "true" : undefined} aria-describedby={fieldErrors.lock ? "settings-lock-error" : undefined}
-                  onChange={(event) => editNumber("lock", event.target.value)} onBlur={() => commitNumber("lock")} />
-                {fieldErrors.lock ? <small id="settings-lock-error" className="field-error">{fieldErrors.lock}</small> : null}
-              </div>
-              <div>
-                <label htmlFor="settings-conflict">Transfer conflict policy</label>
-                <select id="settings-conflict" value={settings.transfer_conflict_policy}
-                  onChange={(event) => patch({ transfer_conflict_policy: event.target.value as TransferConflictPolicy })}>
-                  <option value="ask">Ask every time</option>
-                  <option value="overwrite">Overwrite</option>
-                  <option value="rename">Keep both (rename)</option>
-                  <option value="skip">Skip</option>
-                </select>
-              </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="settings-section" aria-labelledby="desktop-heading">
-            <h3 id="desktop-heading">Desktop integration</h3>
-            <div className="settings-toggles">
-              <Toggle id="clipboard" label="Clipboard sharing" checked={settings.desktop_clipboard_enabled} onChange={(checked) => patch({ desktop_clipboard_enabled: checked })} />
-              <Toggle id="audio" label="Remote audio" checked={settings.desktop_audio_enabled} onChange={(checked) => patch({ desktop_audio_enabled: checked })} />
-              <Toggle id="notifications" label="Desktop notifications" checked={settings.desktop_notifications_enabled} onChange={(checked) => patch({ desktop_notifications_enabled: checked })} />
-            </div>
-          </section>
+            <section className="settings-section" aria-labelledby="behavior-heading">
+              <h3 id="behavior-heading">Behavior and retention</h3>
+              <div className="settings-grid">
+                <div>
+                  <label htmlFor="settings-health">Health refresh (seconds)</label>
+                  <input
+                    id="settings-health"
+                    type="number"
+                    min={1}
+                    max={60}
+                    step={1}
+                    required
+                    value={drafts.health}
+                    aria-invalid={fieldErrors.health ? "true" : undefined}
+                    aria-describedby={fieldErrors.health ? "settings-health-error" : undefined}
+                    onChange={(event) => editNumber("health", event.target.value)}
+                    onBlur={() => commitNumber("health")}
+                  />
+                  {fieldErrors.health ? <small id="settings-health-error" className="field-error">{fieldErrors.health}</small> : null}
+                </div>
+                <div>
+                  <label htmlFor="settings-history">History retention (days)</label>
+                  <input
+                    id="settings-history"
+                    type="number"
+                    min={1}
+                    max={3650}
+                    step={1}
+                    required
+                    value={drafts.history}
+                    aria-invalid={fieldErrors.history ? "true" : undefined}
+                    aria-describedby={fieldErrors.history ? "settings-history-error" : undefined}
+                    onChange={(event) => editNumber("history", event.target.value)}
+                    onBlur={() => commitNumber("history")}
+                  />
+                  {fieldErrors.history ? <small id="settings-history-error" className="field-error">{fieldErrors.history}</small> : null}
+                </div>
+                <div>
+                  <label htmlFor="settings-lock">App lock timeout (minutes)</label>
+                  <input
+                    id="settings-lock"
+                    type="number"
+                    min={1}
+                    max={1440}
+                    step={1}
+                    required
+                    value={drafts.lock}
+                    aria-invalid={fieldErrors.lock ? "true" : undefined}
+                    aria-describedby={fieldErrors.lock ? "settings-lock-error" : undefined}
+                    onChange={(event) => editNumber("lock", event.target.value)}
+                    onBlur={() => commitNumber("lock")}
+                  />
+                  {fieldErrors.lock ? <small id="settings-lock-error" className="field-error">{fieldErrors.lock}</small> : null}
+                </div>
+                <div>
+                  <label htmlFor="settings-conflict">Transfer conflict policy</label>
+                  <select
+                    id="settings-conflict"
+                    value={settings.transfer_conflict_policy}
+                    onChange={(event) => patch({ transfer_conflict_policy: event.target.value as TransferConflictPolicy })}
+                  >
+                    <option value="ask">Ask every time</option>
+                    <option value="overwrite">Overwrite</option>
+                    <option value="rename">Keep both (rename)</option>
+                    <option value="skip">Skip</option>
+                  </select>
+                </div>
+              </div>
+            </section>
 
-          {error ? (
-            <div className="settings-error" role="alert">
-              <strong>{error.message}</strong>
-              <span>Code: <code>{error.code}</code></span>
-              {error.correlationId ? <span>Correlation ID: <code>{error.correlationId}</code></span> : null}
-            </div>
-          ) : null}
+            <section className="settings-section" aria-labelledby="desktop-heading">
+              <h3 id="desktop-heading">Desktop integration</h3>
+              <div className="settings-toggles">
+                <Toggle id="clipboard" label="Clipboard sharing" checked={settings.desktop_clipboard_enabled} onChange={(checked) => patch({ desktop_clipboard_enabled: checked })} />
+                <Toggle id="audio" label="Remote audio" checked={settings.desktop_audio_enabled} onChange={(checked) => patch({ desktop_audio_enabled: checked })} />
+                <Toggle id="notifications" label="Desktop notifications" checked={settings.desktop_notifications_enabled} onChange={(checked) => patch({ desktop_notifications_enabled: checked })} />
+              </div>
+            </section>
+
+            {error ? (
+              <div className="settings-error" role="alert">
+                <strong>{error.message}</strong>
+                <span>Code: <code>{error.code}</code></span>
+                {error.correlationId ? <span>Correlation ID: <code>{error.correlationId}</code></span> : null}
+              </div>
+            ) : null}
           </div>
         </fieldset>
         <div className="modal-foot settings-foot">
