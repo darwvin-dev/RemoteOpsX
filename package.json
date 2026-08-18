@@ -37,7 +37,7 @@
     "vite": "^6.0.5",
     "vitest": "^3.2.6",
     "@types/node": "^22.20.0",
-    "jsdom": "^26.1.0"
+    "jsdom": "^30.0.1"
   },
   "allowScripts": {
     "esbuild@0.25.12": true
