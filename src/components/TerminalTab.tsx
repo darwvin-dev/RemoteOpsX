@@ -5,6 +5,12 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { useStore } from "../store";
+import { useSettingsStore } from "../settingsStore";
+import {
+  SYSTEM_THEME_QUERY,
+  terminalFontStack,
+  terminalTheme,
+} from "../theme";
 import {
   nextTerminalConnectionAttempt,
   startTerminalSession,
@@ -28,6 +34,8 @@ export function TerminalTab({ tabId, server, active }: Props) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const pushAlert = useStore((s) => s.pushAlert);
+  const theme = useSettingsStore((state) => state.settings.theme);
+  const terminalFont = useSettingsStore((state) => state.settings.terminal_font);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [generation, setGeneration] = useState(0);
 
@@ -42,26 +50,14 @@ export function TerminalTab({ tabId, server, active }: Props) {
       generation,
       nextTerminalConnectionAttempt(),
     );
+    const systemPrefersDark = window.matchMedia(SYSTEM_THEME_QUERY).matches;
 
     const term = new Terminal({
-      fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace',
+      fontFamily: terminalFontStack(terminalFont),
       fontSize: 13,
       cursorBlink: true,
       scrollback: 5000,
-      theme: {
-        background: "#05080d",
-        foreground: "#c9d4e0",
-        cursor: "#2dd4bf",
-        selectionBackground: "#1d4e73",
-        black: "#0a0e14",
-        red: "#f85149",
-        green: "#3fb950",
-        yellow: "#d29922",
-        blue: "#4aa8ff",
-        magenta: "#a371f7",
-        cyan: "#2dd4bf",
-        white: "#e6edf3",
-      },
+      theme: terminalTheme(theme, systemPrefersDark),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -105,9 +101,6 @@ export function TerminalTab({ tabId, server, active }: Props) {
           onExit: () => {
             setConn("closed");
             term.writeln("\r\n\x1b[33m● session closed\x1b[0m");
-            // The SSH process can terminate while the terminal tab remains
-            // open. Close/reap it immediately so SQLite session history does
-            // not remain active until tab cleanup or the next app startup.
             if (spawned) {
               spawned = false;
               void api.ptyClose(backendSessionId).catch((error) => {
@@ -155,6 +148,25 @@ export function TerminalTab({ tabId, server, active }: Props) {
       termRef.current = null;
     };
   }, [tabId, server.id, generation, pushAlert, server.name]);
+
+  useEffect(() => {
+    const media = window.matchMedia(SYSTEM_THEME_QUERY);
+    const applyTerminalAppearance = () => {
+      const term = termRef.current;
+      if (!term) return;
+      term.options.fontFamily = terminalFontStack(terminalFont);
+      term.options.theme = terminalTheme(theme, media.matches);
+      try {
+        fitRef.current?.fit();
+      } catch {
+        // A hidden terminal may not be measurable yet.
+      }
+    };
+    applyTerminalAppearance();
+    if (theme !== "system") return;
+    media.addEventListener("change", applyTerminalAppearance);
+    return () => media.removeEventListener("change", applyTerminalAppearance);
+  }, [terminalFont, theme]);
 
   useEffect(() => {
     if (active && fitRef.current) {

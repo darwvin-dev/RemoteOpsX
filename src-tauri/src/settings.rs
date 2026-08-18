@@ -10,6 +10,46 @@ pub enum Theme {
     System,
     Dark,
     Light,
+    Nord,
+    Dracula,
+    TokyoNight,
+    SolarizedDark,
+    SolarizedLight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFont {
+    System,
+    Inter,
+    IbmPlexSans,
+    NotoSans,
+    Ubuntu,
+    Roboto,
+}
+
+impl Default for UiFont {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalFont {
+    JetbrainsMono,
+    FiraCode,
+    CascadiaCode,
+    IbmPlexMono,
+    SourceCodePro,
+    DejavuSansMono,
+    SystemMono,
+}
+
+impl Default for TerminalFont {
+    fn default() -> Self {
+        Self::JetbrainsMono
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +84,10 @@ impl Default for DefaultPorts {
 pub struct AppSettings {
     pub schema_version: u32,
     pub theme: Theme,
+    #[serde(default)]
+    pub ui_font: UiFont,
+    #[serde(default)]
+    pub terminal_font: TerminalFont,
     pub default_ports: DefaultPorts,
     pub health_refresh_interval_ms: u64,
     pub history_retention_days: u32,
@@ -59,6 +103,8 @@ impl Default for AppSettings {
         Self {
             schema_version: CURRENT_SETTINGS_SCHEMA_VERSION,
             theme: Theme::System,
+            ui_font: UiFont::default(),
+            terminal_font: TerminalFont::default(),
             default_ports: DefaultPorts::default(),
             health_refresh_interval_ms: 3000,
             history_retention_days: 90,
@@ -127,6 +173,8 @@ mod tests {
         let settings = AppSettings::default();
         assert_eq!(settings.schema_version, 1);
         assert_eq!(settings.theme, Theme::System);
+        assert_eq!(settings.ui_font, UiFont::System);
+        assert_eq!(settings.terminal_font, TerminalFont::JetbrainsMono);
         assert_eq!(settings.default_ports.ssh, 22);
         assert_eq!(settings.default_ports.ftp, 21);
         assert_eq!(settings.default_ports.rdp, 3389);
@@ -141,6 +189,39 @@ mod tests {
         assert!(settings.desktop_clipboard_enabled);
         assert!(settings.desktop_audio_enabled);
         assert!(settings.desktop_notifications_enabled);
+    }
+
+    #[test]
+    fn old_schema_one_json_loads_with_new_appearance_defaults() {
+        let legacy = r#"{
+            "schema_version":1,
+            "theme":"dark",
+            "default_ports":{"ssh":22,"ftp":21,"rdp":3389,"vnc":5900},
+            "health_refresh_interval_ms":3000,
+            "history_retention_days":90,
+            "app_lock_timeout_minutes":15,
+            "transfer_conflict_policy":"ask",
+            "desktop_clipboard_enabled":true,
+            "desktop_audio_enabled":true,
+            "desktop_notifications_enabled":true
+        }"#;
+        let settings: AppSettings = serde_json::from_str(legacy).unwrap();
+        assert_eq!(settings.theme, Theme::Dark);
+        assert_eq!(settings.ui_font, UiFont::System);
+        assert_eq!(settings.terminal_font, TerminalFont::JetbrainsMono);
+    }
+
+    #[test]
+    fn appearance_presets_round_trip_through_json() {
+        let settings = AppSettings {
+            theme: Theme::TokyoNight,
+            ui_font: UiFont::IbmPlexSans,
+            terminal_font: TerminalFont::CascadiaCode,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, settings);
     }
 
     #[test]
