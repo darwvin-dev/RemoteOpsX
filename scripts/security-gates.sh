@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Security regression tests intentionally contain forbidden strings to assert
-# that unsafe policies never return. Inspect only production sections (before
-# the first #[cfg(test)]) so those test fixtures cannot create false positives.
+# Security regression tests and explanatory comments intentionally contain
+# forbidden strings to document/assert that unsafe policies never return.
+# Inspect executable production source only: stop at the first #[cfg(test)] and
+# omit comment-only lines. Inline source remains scanned.
 production_source() {
-  awk '/^#\[cfg\(test\)\]/{exit} {print}' "$1"
+  awk '
+    /^#\[cfg\(test\)\]/{exit}
+    {
+      trimmed=$0
+      sub(/^[[:space:]]+/, "", trimmed)
+      if (trimmed ~ /^\/\//) next
+      print $0
+    }
+  ' "$1"
 }
 
 fail_in_production() {
