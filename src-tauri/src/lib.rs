@@ -42,6 +42,7 @@ use models::*;
 use pty_manager::PtyManager;
 use ssh_keys::SshKeyInfo;
 use transfer_manager::TransferManager;
+use transfer_manager::TransferManager;
 use tunnel_manager::TunnelManager;
 
 pub struct AppState {
