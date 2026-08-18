@@ -13,7 +13,7 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 - One-shot remote commands are delivered through SSH stdin so command text is not exposed in the local process argv.
 - Runtime preflight checks core OpenSSH tooling plus profile-specific password, FTP, RDP, VNC, and keyring readiness.
 - Known keyring secrets are registered in a central redaction layer and masked from buffered SSH output, IPC errors, every textual runbook result field, backend diagnostics, and exported text; profile metadata, user runbooks, snippets, and persisted tunnel endpoint text reject known stored credentials before SQLite persistence.
-- Existing saved credentials are preloaded from keyring references during startup on a best-effort basis, so redaction and persistence guards are active before the first connection attempt.
+- Existing saved credentials are preloaded from keyring references during startup on a best-effort basis, so redaction and persistence guards are active before the first connection attempt; historical user-controlled SQLite text is also scrubbed from logical database values when it contains a known secret.
 - CI and tagged-release preflight contain source-level regression gates that reject weakened SSH/RDP trust and password-in-argv patterns.
 
 ### Reliability
