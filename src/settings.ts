@@ -1,6 +1,25 @@
 import { RemoteOpsError } from "./errors";
 
-export type Theme = "system" | "dark" | "light";
+export type Theme =
+  | "system"
+  | "dark"
+  | "light"
+  | "nord"
+  | "dracula"
+  | "tokyo_night"
+  | "solarized_dark"
+  | "solarized_light";
+
+export type UiFont = "system" | "inter" | "ibm_plex_sans" | "noto_sans" | "ubuntu" | "roboto";
+
+export type TerminalFont =
+  | "jetbrains_mono"
+  | "fira_code"
+  | "cascadia_code"
+  | "ibm_plex_mono"
+  | "source_code_pro"
+  | "dejavu_sans_mono"
+  | "system_mono";
 
 export type TransferConflictPolicy = "ask" | "overwrite" | "rename" | "skip";
 
@@ -14,6 +33,8 @@ export interface DefaultPorts {
 export interface AppSettings {
   schema_version: number;
   theme: Theme;
+  ui_font: UiFont;
+  terminal_font: TerminalFont;
   default_ports: DefaultPorts;
   health_refresh_interval_ms: number;
   history_retention_days: number;
@@ -35,6 +56,8 @@ export type DeepReadonly<T> = T extends object
 export const DEFAULT_SETTINGS: DeepReadonly<AppSettings> = Object.freeze({
   schema_version: 1,
   theme: "system",
+  ui_font: "system",
+  terminal_font: "jetbrains_mono",
   default_ports: Object.freeze({ ssh: 22, ftp: 21, rdp: 3389, vnc: 5900 }),
   health_refresh_interval_ms: 3000,
   history_retention_days: 90,
@@ -44,6 +67,36 @@ export const DEFAULT_SETTINGS: DeepReadonly<AppSettings> = Object.freeze({
   desktop_audio_enabled: true,
   desktop_notifications_enabled: true,
 });
+
+export const THEMES: readonly Theme[] = [
+  "system",
+  "dark",
+  "light",
+  "nord",
+  "dracula",
+  "tokyo_night",
+  "solarized_dark",
+  "solarized_light",
+];
+
+export const UI_FONTS: readonly UiFont[] = [
+  "system",
+  "inter",
+  "ibm_plex_sans",
+  "noto_sans",
+  "ubuntu",
+  "roboto",
+];
+
+export const TERMINAL_FONTS: readonly TerminalFont[] = [
+  "jetbrains_mono",
+  "fira_code",
+  "cascadia_code",
+  "ibm_plex_mono",
+  "source_code_pro",
+  "dejavu_sans_mono",
+  "system_mono",
+];
 
 export function patchSettings(current: DeepReadonly<AppSettings>, patch: SettingsPatch): AppSettings {
   return {
@@ -70,8 +123,14 @@ export function validateSettings(settings: AppSettings): void {
   if (settings.schema_version !== 1) {
     invalid("schema_version", "unsupported settings schema version; supported schema version is 1");
   }
-  if (!(["system", "dark", "light"] as unknown[]).includes(settings.theme)) {
-    invalid("theme", "must be system, dark, or light");
+  if (!(THEMES as readonly unknown[]).includes(settings.theme)) {
+    invalid("theme", `must be one of: ${THEMES.join(", ")}`);
+  }
+  if (!(UI_FONTS as readonly unknown[]).includes(settings.ui_font)) {
+    invalid("ui_font", `must be one of: ${UI_FONTS.join(", ")}`);
+  }
+  if (!(TERMINAL_FONTS as readonly unknown[]).includes(settings.terminal_font)) {
+    invalid("terminal_font", `must be one of: ${TERMINAL_FONTS.join(", ")}`);
   }
   if (!(["ask", "overwrite", "rename", "skip"] as unknown[]).includes(settings.transfer_conflict_policy)) {
     invalid("transfer_conflict_policy", "must be ask, overwrite, rename, or skip");
