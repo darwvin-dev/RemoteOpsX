@@ -64,9 +64,11 @@ pub fn redact_command_output(mut output: CommandOutput) -> CommandOutput {
 }
 
 pub fn redact_step_result(mut result: StepResult) -> StepResult {
+    result.name = redact(result.name);
     result.command = redact(result.command);
     result.stdout = redact(result.stdout);
     result.stderr = redact(result.stderr);
+    result.status = redact(result.status);
     result
 }
 
@@ -100,25 +102,30 @@ mod tests {
     }
 
     #[test]
-    fn masks_command_output_and_runbook_command_fields() {
-        register_secret("redaction-test-password-123");
+    fn masks_command_output_and_every_textual_runbook_result_field() {
+        const SECRET: &str = "redaction-test-password-123";
+        register_secret(SECRET);
         let output = redact_command_output(CommandOutput {
-            stdout: "redaction-test-password-123".into(),
-            stderr: "failed: redaction-test-password-123".into(),
+            stdout: SECRET.into(),
+            stderr: format!("failed: {SECRET}"),
             exit_code: 1,
             success: false,
         });
-        assert!(!output.stdout.contains("redaction-test-password-123"));
-        assert!(!output.stderr.contains("redaction-test-password-123"));
+        assert!(!output.stdout.contains(SECRET));
+        assert!(!output.stderr.contains(SECRET));
 
         let step = redact_step_result(StepResult {
-            name: "test".into(),
-            command: "curl -u user:redaction-test-password-123 host".into(),
-            stdout: "ok".into(),
-            stderr: String::new(),
+            name: format!("step {SECRET}"),
+            command: format!("curl -u user:{SECRET} host"),
+            stdout: format!("output {SECRET}"),
+            stderr: format!("error {SECRET}"),
             exit_code: 0,
-            status: "success".into(),
+            status: format!("status {SECRET}"),
         });
-        assert!(!step.command.contains("redaction-test-password-123"));
+        assert!(!step.name.contains(SECRET));
+        assert!(!step.command.contains(SECRET));
+        assert!(!step.stdout.contains(SECRET));
+        assert!(!step.stderr.contains(SECRET));
+        assert!(!step.status.contains(SECRET));
     }
 }
