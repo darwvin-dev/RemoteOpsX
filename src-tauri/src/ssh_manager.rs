@@ -2,9 +2,12 @@
 //!
 //! RemoteOpsX drives the system OpenSSH client. Every SSH-derived transport
 //! uses the app-managed known_hosts file and StrictHostKeyChecking=yes; first
-//! contact therefore cannot silently establish trust.
+//! contact therefore cannot silently establish trust. One-shot remote commands
+//! are delivered to the remote shell over stdin so command text (and any
+//! sensitive value it contains) is not exposed in the local process list.
 
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, Result};
 
@@ -13,7 +16,6 @@ use crate::models::{CommandOutput, Server};
 use crate::redaction;
 use crate::vault;
 
-/// Common ssh options applied to every connection.
 fn base_opts() -> Result<Vec<String>> {
     let mut args = host_identity::strict_ssh_options()?;
     args.extend([
@@ -25,7 +27,6 @@ fn base_opts() -> Result<Vec<String>> {
     Ok(args)
 }
 
-/// Host-identity options reused by SCP and tunnel transports.
 pub fn strict_host_key_args() -> Result<Vec<String>> {
     host_identity::strict_ssh_options()
 }
@@ -66,8 +67,13 @@ pub fn interactive_argv(server: &Server) -> Result<(String, Vec<String>)> {
     wrap_with_password(server, "ssh", args)
 }
 
-fn exec_argv(server: &Server, remote_command: &str) -> Result<(String, Vec<String>)> {
+/// Build a one-shot SSH process without embedding the remote command in argv.
+/// With no explicit command OpenSSH starts the user's remote shell; the caller
+/// sends the command on stdin and closes it, which executes the command and
+/// then cleanly terminates the remote shell at EOF.
+fn exec_argv(server: &Server) -> Result<(String, Vec<String>)> {
     let mut args = base_opts()?;
+    args.push("-T".into());
     args.push("-o".into());
     args.push(if wants_password(server) {
         "BatchMode=no".into()
@@ -78,7 +84,6 @@ fn exec_argv(server: &Server, remote_command: &str) -> Result<(String, Vec<Strin
     args.push(server.port.to_string());
     push_key_args(server, &mut args);
     args.push(format!("{}@{}", server.username, server.host));
-    args.push(remote_command.to_string());
     wrap_with_password(server, "ssh", args)
 }
 
@@ -123,14 +128,34 @@ pub fn apply_password_env(cmd: &mut Command, server: &Server) {
 }
 
 pub fn run_remote(server: &Server, remote_command: &str) -> Result<CommandOutput> {
-    let (program, args) = exec_argv(server, remote_command)?;
+    let (program, args) = exec_argv(server)?;
     let mut cmd = Command::new(&program);
-    cmd.args(&args);
+    cmd.args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     apply_password_env(&mut cmd, server);
 
-    let output = cmd
-        .output()
+    let mut child = cmd
+        .spawn()
         .map_err(|error| anyhow!("failed to spawn ssh: {error}"))?;
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow!("failed to open ssh stdin"))?;
+        stdin.write_all(remote_command.as_bytes())?;
+        if !remote_command.ends_with('\n') {
+            stdin.write_all(b"\n")?;
+        }
+    }
+    // Close stdin so the remote login shell receives EOF and exits after the
+    // command. Keeping the pipe open would leave one-shot calls hanging.
+    drop(child.stdin.take());
+
+    let output = child
+        .wait_with_output()
+        .map_err(|error| anyhow!("failed to read ssh output: {error}"))?;
     let exit_code = output.status.code().unwrap_or(-1);
     Ok(redaction::redact_command_output(CommandOutput {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -186,6 +211,14 @@ mod tests {
         assert!(has_opt(&args, "IdentitiesOnly=yes"));
         assert!(args.iter().any(|arg| arg == "/home/user/.ssh/id_ed25519"));
         assert!(!has_opt(&args, "PubkeyAuthentication=no"));
+    }
+
+    #[test]
+    fn one_shot_argv_never_needs_remote_command_text() {
+        // The command is intentionally absent from exec_argv's API. This
+        // regression guard documents the process-list security boundary.
+        let signature: fn(&Server) -> Result<(String, Vec<String>)> = exec_argv;
+        let _ = signature;
     }
 
     #[test]
