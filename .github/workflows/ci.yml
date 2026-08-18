@@ -90,7 +90,7 @@ jobs:
         if: steps.rustfmt_check.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: rustfmt-output
+          name: rustfmt-output-linux
           path: /tmp/rustfmt-output.tar.gz
           retention-days: 1
 
@@ -141,7 +141,27 @@ jobs:
         run: npm run build
 
       - name: Rust formatting
+        id: rustfmt_check
+        continue-on-error: true
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Capture formatted Rust sources
+        if: steps.rustfmt_check.outcome == 'failure'
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          tar -czf /tmp/rustfmt-output.tar.gz src-tauri/src src-tauri/tests
+
+      - name: Upload rustfmt repair artifact
+        if: steps.rustfmt_check.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-output-macos
+          path: /tmp/rustfmt-output.tar.gz
+          retention-days: 1
+
+      - name: Enforce Rust formatting gate
+        if: steps.rustfmt_check.outcome == 'failure'
+        run: exit 1
 
       - name: Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
