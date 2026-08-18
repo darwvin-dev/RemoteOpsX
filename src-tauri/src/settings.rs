@@ -36,6 +36,20 @@ impl Default for UiFont {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum UiDensity {
+    Compact,
+    Comfortable,
+    Spacious,
+}
+
+impl Default for UiDensity {
+    fn default() -> Self {
+        Self::Comfortable
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TerminalFont {
     JetbrainsMono,
     FiraCode,
@@ -50,6 +64,32 @@ impl Default for TerminalFont {
     fn default() -> Self {
         Self::JetbrainsMono
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalCursorStyle {
+    Block,
+    Underline,
+    Bar,
+}
+
+impl Default for TerminalCursorStyle {
+    fn default() -> Self {
+        Self::Block
+    }
+}
+
+fn default_terminal_font_size() -> u16 {
+    13
+}
+
+fn default_terminal_line_height_percent() -> u16 {
+    100
+}
+
+fn default_terminal_background_opacity_percent() -> u16 {
+    100
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,7 +127,17 @@ pub struct AppSettings {
     #[serde(default)]
     pub ui_font: UiFont,
     #[serde(default)]
+    pub ui_density: UiDensity,
+    #[serde(default)]
     pub terminal_font: TerminalFont,
+    #[serde(default = "default_terminal_font_size")]
+    pub terminal_font_size: u16,
+    #[serde(default = "default_terminal_line_height_percent")]
+    pub terminal_line_height_percent: u16,
+    #[serde(default)]
+    pub terminal_cursor_style: TerminalCursorStyle,
+    #[serde(default = "default_terminal_background_opacity_percent")]
+    pub terminal_background_opacity_percent: u16,
     pub default_ports: DefaultPorts,
     pub health_refresh_interval_ms: u64,
     pub history_retention_days: u32,
@@ -104,7 +154,12 @@ impl Default for AppSettings {
             schema_version: CURRENT_SETTINGS_SCHEMA_VERSION,
             theme: Theme::System,
             ui_font: UiFont::default(),
+            ui_density: UiDensity::default(),
             terminal_font: TerminalFont::default(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_line_height_percent: default_terminal_line_height_percent(),
+            terminal_cursor_style: TerminalCursorStyle::default(),
+            terminal_background_opacity_percent: default_terminal_background_opacity_percent(),
             default_ports: DefaultPorts::default(),
             health_refresh_interval_ms: 3000,
             history_retention_days: 90,
@@ -126,6 +181,24 @@ impl AppSettings {
                     "unsupported settings schema version; supported schema version is {}",
                     CURRENT_SETTINGS_SCHEMA_VERSION
                 ),
+            ));
+        }
+        if !(10..=24).contains(&self.terminal_font_size) {
+            return Err(DomainError::validation(
+                "terminal_font_size",
+                "must be between 10 and 24 pixels",
+            ));
+        }
+        if !(100..=200).contains(&self.terminal_line_height_percent) {
+            return Err(DomainError::validation(
+                "terminal_line_height_percent",
+                "must be between 100 and 200 percent",
+            ));
+        }
+        if !(55..=100).contains(&self.terminal_background_opacity_percent) {
+            return Err(DomainError::validation(
+                "terminal_background_opacity_percent",
+                "must be between 55 and 100 percent",
             ));
         }
         if !(1000..=60_000).contains(&self.health_refresh_interval_ms) {
@@ -174,7 +247,12 @@ mod tests {
         assert_eq!(settings.schema_version, 1);
         assert_eq!(settings.theme, Theme::System);
         assert_eq!(settings.ui_font, UiFont::System);
+        assert_eq!(settings.ui_density, UiDensity::Comfortable);
         assert_eq!(settings.terminal_font, TerminalFont::JetbrainsMono);
+        assert_eq!(settings.terminal_font_size, 13);
+        assert_eq!(settings.terminal_line_height_percent, 100);
+        assert_eq!(settings.terminal_cursor_style, TerminalCursorStyle::Block);
+        assert_eq!(settings.terminal_background_opacity_percent, 100);
         assert_eq!(settings.default_ports.ssh, 22);
         assert_eq!(settings.default_ports.ftp, 21);
         assert_eq!(settings.default_ports.rdp, 3389);
@@ -208,7 +286,12 @@ mod tests {
         let settings: AppSettings = serde_json::from_str(legacy).unwrap();
         assert_eq!(settings.theme, Theme::Dark);
         assert_eq!(settings.ui_font, UiFont::System);
+        assert_eq!(settings.ui_density, UiDensity::Comfortable);
         assert_eq!(settings.terminal_font, TerminalFont::JetbrainsMono);
+        assert_eq!(settings.terminal_font_size, 13);
+        assert_eq!(settings.terminal_line_height_percent, 100);
+        assert_eq!(settings.terminal_cursor_style, TerminalCursorStyle::Block);
+        assert_eq!(settings.terminal_background_opacity_percent, 100);
     }
 
     #[test]
@@ -216,12 +299,48 @@ mod tests {
         let settings = AppSettings {
             theme: Theme::TokyoNight,
             ui_font: UiFont::IbmPlexSans,
+            ui_density: UiDensity::Compact,
             terminal_font: TerminalFont::CascadiaCode,
+            terminal_font_size: 15,
+            terminal_line_height_percent: 125,
+            terminal_cursor_style: TerminalCursorStyle::Bar,
+            terminal_background_opacity_percent: 82,
             ..AppSettings::default()
         };
         let encoded = serde_json::to_string(&settings).unwrap();
         let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded, settings);
+    }
+
+    #[test]
+    fn validation_rejects_terminal_appearance_outside_bounds() {
+        for value in [9, 25] {
+            let settings = AppSettings {
+                terminal_font_size: value,
+                ..AppSettings::default()
+            };
+            assert_eq!(field(&settings.validate().unwrap_err()), Some("terminal_font_size"));
+        }
+        for value in [99, 201] {
+            let settings = AppSettings {
+                terminal_line_height_percent: value,
+                ..AppSettings::default()
+            };
+            assert_eq!(
+                field(&settings.validate().unwrap_err()),
+                Some("terminal_line_height_percent")
+            );
+        }
+        for value in [54, 101] {
+            let settings = AppSettings {
+                terminal_background_opacity_percent: value,
+                ..AppSettings::default()
+            };
+            assert_eq!(
+                field(&settings.validate().unwrap_err()),
+                Some("terminal_background_opacity_percent")
+            );
+        }
     }
 
     #[test]
@@ -300,6 +419,27 @@ mod tests {
         for value in [1, 1440] {
             let settings = AppSettings {
                 app_lock_timeout_minutes: value,
+                ..AppSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+        for value in [10, 24] {
+            let settings = AppSettings {
+                terminal_font_size: value,
+                ..AppSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+        for value in [100, 200] {
+            let settings = AppSettings {
+                terminal_line_height_percent: value,
+                ..AppSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+        for value in [55, 100] {
+            let settings = AppSettings {
+                terminal_background_opacity_percent: value,
                 ..AppSettings::default()
             };
             assert!(settings.validate().is_ok());
