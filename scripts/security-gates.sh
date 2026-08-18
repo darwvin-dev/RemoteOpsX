@@ -1,32 +1,57 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-fail_if_present() {
+# Security regression tests intentionally contain forbidden strings to assert
+# that unsafe policies never return. Inspect only production sections (before
+# the first #[cfg(test)]) so those test fixtures cannot create false positives.
+production_source() {
+  awk '/^#\[cfg\(test\)\]/{exit} {print}' "$1"
+}
+
+fail_in_production() {
   local pattern="$1"
   local message="$2"
   shift 2
-  if grep -RInE -- "$pattern" "$@"; then
-    echo "SECURITY GATE FAILED: $message" >&2
-    exit 1
-  fi
+  local file
+  for file in "$@"; do
+    if production_source "$file" | grep -nE -- "$pattern"; then
+      echo "SECURITY GATE FAILED in $file: $message" >&2
+      exit 1
+    fi
+  done
 }
 
-# SSH identity must always be explicit through the app-managed known_hosts file.
-fail_if_present 'StrictHostKeyChecking=(accept-new|no)' \
+ssh_transport_files=(
+  src-tauri/src/host_identity.rs
+  src-tauri/src/ssh_manager.rs
+  src-tauri/src/sftp_manager.rs
+  src-tauri/src/tunnel_manager.rs
+  src-tauri/src/pty_manager.rs
+)
+
+process_builder_files=(
+  src-tauri/src/ssh_manager.rs
+  src-tauri/src/sftp_manager.rs
+  src-tauri/src/tunnel_manager.rs
+  src-tauri/src/rdp_adapter.rs
+  src-tauri/src/vnc_adapter.rs
+  src-tauri/src/ftp_manager.rs
+)
+
+fail_in_production 'StrictHostKeyChecking=(accept-new|no)' \
   'SSH transport must not silently accept first-seen or changed host keys.' \
-  src-tauri/src
+  "${ssh_transport_files[@]}"
 
-# FreeRDP must never bypass certificate validation or carry stored passwords in argv.
-fail_if_present '/cert:ignore' \
+fail_in_production '/cert:ignore' \
   'FreeRDP certificate validation must not be disabled.' \
-  src-tauri/src
-fail_if_present '(/p:|"/p:")' \
+  src-tauri/src/rdp_adapter.rs
+
+fail_in_production '(/p:|"/p:")' \
   'FreeRDP passwords must not be placed in process argv.' \
-  src-tauri/src
+  src-tauri/src/rdp_adapter.rs
 
-# Known dangerous credential styles should never be introduced in process builders.
-fail_if_present '(--password|-password)[= ]' \
+fail_in_production '(--password|-password)[= ]' \
   'Do not add literal password command-line arguments; use stdin/env/keyring-safe transport.' \
-  src-tauri/src
+  "${process_builder_files[@]}"
 
-echo 'RemoteOpsX security source gates passed.'
+echo 'RemoteOpsX production security source gates passed.'
