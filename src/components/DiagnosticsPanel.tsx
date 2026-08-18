@@ -76,7 +76,7 @@ export function DiagnosticsPanel({ server }: { server: Server }) {
       const report = await api.sshHostIdentityTrust(server.id, fingerprint, replace);
       setIdentity(report);
       pushAlert(
-        "success",
+        "info",
         `${server.name}: SSH fingerprint ${replace ? "replaced" : "trusted"}`,
         server.id,
       );
@@ -94,7 +94,7 @@ export function DiagnosticsPanel({ server }: { server: Server }) {
     try {
       await api.sshHostIdentityRemove(server.id);
       await refreshIdentity();
-      pushAlert("success", `${server.name}: stored SSH identity removed`, server.id);
+      pushAlert("info", `${server.name}: stored SSH identity removed`, server.id);
     } catch (error) {
       setIdentityError(String(error));
       pushAlert("error", `${server.name}: failed to remove SSH identity`, server.id);
