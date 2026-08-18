@@ -133,6 +133,8 @@ fn server_get(state: State<AppState>, id: String) -> CommandResult<Server> {
 fn server_save(state: State<AppState>, mut input: ServerInput) -> CommandResult<String> {
     database::validate_server_input(&input)
         .map_err(|error| DomainError::validation("server", error.to_string()))?;
+    host_identity::validate_target(&input.host, input.port)
+        .map_err(|error| DomainError::validation("host", error.to_string()))?;
     if input.id.is_none() {
         input.id = Some(uuid::Uuid::new_v4().to_string());
     }

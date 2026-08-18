@@ -126,10 +126,7 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
         port,
         status: status.to_string(),
         candidates,
-        trusted_fingerprints: trusted
-            .into_iter()
-            .map(|value| value.fingerprint)
-            .collect(),
+        trusted_fingerprints: trusted.into_iter().map(|value| value.fingerprint).collect(),
     })
 }
 
@@ -212,12 +209,20 @@ pub fn remove(host: &str, port: u16) -> Result<()> {
     Ok(())
 }
 
-fn validate_target(host: &str, port: u16) -> Result<()> {
-    if host.trim().is_empty()
-        || host.chars().any(char::is_whitespace)
-        || host.chars().any(char::is_control)
-    {
-        return Err(anyhow!("invalid SSH host name"));
+pub fn validate_target(host: &str, port: u16) -> Result<()> {
+    // The first known_hosts field has wildcard/list/marker syntax. Accept only
+    // the DNS/IP characters RemoteOpsX needs so a profile value cannot create
+    // trust for additional hosts (for example via commas or '*'). Raw IPv6
+    // addresses and zone identifiers such as fe80::1%eth0 remain supported.
+    let valid_host = !host.is_empty()
+        && host == host.trim()
+        && host.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_' | ':' | '%')
+        });
+    if !valid_host {
+        return Err(anyhow!(
+            "invalid SSH host name; use a DNS name, IPv4 address, or raw IPv6 address"
+        ));
     }
     if port == 0 {
         return Err(anyhow!("invalid SSH port"));
@@ -347,6 +352,30 @@ mod tests {
             .any(|arg| arg == "UserKnownHostsFile=/tmp/remoteopsx-known-hosts"));
         assert!(!args.iter().any(|arg| arg.contains("accept-new")));
         assert!(!args.iter().any(|arg| arg == "StrictHostKeyChecking=no"));
+    }
+
+    #[test]
+    fn rejects_known_hosts_metacharacters_and_accepts_dns_ip_forms() {
+        for invalid in [
+            "prod,*.internal",
+            "*.internal",
+            "!prod.internal",
+            "|1|hashed",
+            "[2001:db8::1]",
+            "prod internal",
+            "user@host",
+        ] {
+            assert!(validate_target(invalid, 22).is_err(), "accepted {invalid}");
+        }
+        for valid in [
+            "prod.internal",
+            "10.0.0.10",
+            "2001:db8::1",
+            "fe80::1%eth0",
+            "host_name.internal",
+        ] {
+            assert!(validate_target(valid, 22).is_ok(), "rejected {valid}");
+        }
     }
 
     #[test]
