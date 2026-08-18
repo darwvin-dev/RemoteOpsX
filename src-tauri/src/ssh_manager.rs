@@ -48,7 +48,10 @@ pub fn jump_host_args_via(jump: Option<&JumpHostConfig>) -> Result<Vec<String>> 
     let Some(jump) = jump else {
         return Ok(Vec::new());
     };
-    Ok(vec!["-o".into(), format!("ProxyCommand={}", proxy_command(jump)?)])
+    Ok(vec![
+        "-o".into(),
+        format!("ProxyCommand={}", proxy_command(jump)?),
+    ])
 }
 
 pub fn jump_host_args(server: &Server) -> Result<Vec<String>> {
@@ -129,10 +132,6 @@ pub fn interactive_argv(server: &Server) -> Result<(String, Vec<String>)> {
     interactive_argv_via(server, jump.as_ref())
 }
 
-/// Build a one-shot SSH process without embedding the remote command in argv.
-/// With no explicit command OpenSSH starts the user's remote shell; the caller
-/// sends the command on stdin and closes it, which executes the command and
-/// then cleanly terminates the remote shell at EOF.
 fn exec_argv_via(server: &Server, jump: Option<&JumpHostConfig>) -> Result<(String, Vec<String>)> {
     let mut args = base_opts_via(jump)?;
     args.push("-T".into());
