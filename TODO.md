@@ -23,7 +23,7 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - 🚧 **Host identity trust** — current OpenSSH transport uses `StrictHostKeyChecking=accept-new`, so changed keys are rejected but first contact is implicit. Add a known-hosts UI with fingerprint preview, explicit trust/replace/remove actions and clear changed-key recovery.
 - ✅ **RDP credential/certificate baseline** — use certificate TOFU instead of unconditional certificate ignore, and send stored passwords through stdin rather than process argv.
 - ⬜ **Runtime preflight** — detect required/optional binaries and keyring availability at startup; show actionable status for OpenSSH, SCP, curl, sshpass, FreeRDP and VNC before a user hits a failure.
-- ⬜ **Connection test** — profile-level "Test connection" with DNS/TCP/auth/host-key diagnostics and a safe latency/result summary before saving or operating on production hosts.
+- ✅ **Connection diagnostics** — focused-host read-only SSH test using the same transport/auth/keyring/host-key path as live operations, with latency plus actionable DNS/network/auth/host-key/dependency/credential failure classification.
 - ⬜ **Live SSH integration fixture** — CI test against an ephemeral SSH server covering key auth, password auth, exec, PTY, SCP/SFTP operations and host-key mismatch behavior.
 - ⬜ **Crash/restart reconciliation** — close stale session rows on startup and reconcile orphaned tunnel/session state deterministically.
 - ⬜ **Secret-masking pass** — central redaction for command/log/runbook output, diagnostic bundles and error payloads; add regression tests for stored credentials and user-defined sensitive values.
