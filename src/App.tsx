@@ -10,10 +10,12 @@ import { BottomPanel } from "./components/BottomPanel";
 import { RunbookLauncher } from "./components/RunbookLauncher";
 import { TunnelManager } from "./components/TunnelManager";
 import { JumpHostManager } from "./components/JumpHostManager";
+import { OperatorCenter } from "./components/OperatorCenter";
 import { CommandPalette } from "./components/CommandPalette";
 import { ToastStack } from "./components/ToastStack";
 import { SettingsModal } from "./components/SettingsModal";
 import { useSettingsStore } from "./settingsStore";
+import * as operatorApi from "./operatorApi";
 import { resolveTheme, resolveThemePreset, SYSTEM_THEME_QUERY } from "./theme";
 
 export default function App() {
@@ -28,6 +30,7 @@ export default function App() {
   const [showRunbooks, setShowRunbooks] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
   const [showJumpHosts, setShowJumpHosts] = useState(false);
+  const [showOperatorCenter, setShowOperatorCenter] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -58,6 +61,7 @@ export default function App() {
   useEffect(() => {
     void loadServers();
     void loadSettings().catch(() => undefined);
+    void operatorApi.bootstrap().catch(() => undefined);
   }, [loadServers, loadSettings]);
 
   useLayoutEffect(() => {
@@ -102,6 +106,7 @@ export default function App() {
         </div>
         <button className="tiny" onClick={() => setShowRunbooks(true)}>Runbooks</button>
         <button className="tiny" onClick={() => setShowTunnels(true)}>Tunnels</button>
+        <button className="tiny" onClick={() => setShowOperatorCenter(true)}>Operations</button>
         <button className="tiny" onClick={() => setShowJumpHosts(true)}>Bastions</button>
         <button ref={settingsTriggerRef} className="tiny" onClick={() => openSettings(settingsTriggerRef.current)}>Settings</button>
       </header>
@@ -130,6 +135,7 @@ export default function App() {
       {showRunbooks && <RunbookLauncher onClose={() => setShowRunbooks(false)} />}
       {showTunnels && <TunnelManager onClose={() => setShowTunnels(false)} />}
       {showJumpHosts && <JumpHostManager onClose={() => setShowJumpHosts(false)} />}
+      {showOperatorCenter && <OperatorCenter onClose={() => setShowOperatorCenter(false)} />}
       {settingsOpen && <SettingsModal returnFocus={settingsReturnFocusRef.current} onClose={() => setSettingsOpen(false)} />}
     </div>
   );

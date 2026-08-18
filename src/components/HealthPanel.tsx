@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import * as api from "../api";
+import * as operatorApi from "../operatorApi";
 import { useStore } from "../store";
 import { useSettingsStore } from "../settingsStore";
 import type { HealthSnapshot, Server } from "../types";
@@ -26,7 +26,7 @@ export function HealthPanel({ server }: { server: Server }) {
     async function tick() {
       if (paused) { timer = setTimeout(tick, intervalMs); return; }
       try {
-        const s = await api.healthCollect(server.id);
+        const s = await operatorApi.healthCollect(server.id);
         if (cancelled) return;
         setSnap(s);
         setError(null);
