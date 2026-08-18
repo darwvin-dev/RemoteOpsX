@@ -199,5 +199,5 @@ export interface Tab {
   runbookId?: string;
 }
 
-export type RightPanelView = "health" | "services" | "notes" | "snippets";
+export type RightPanelView = "health" | "diagnostics" | "services" | "notes" | "snippets";
 export type BottomPanelView = "output" | "history" | "sessions" | "alerts";
