@@ -5,7 +5,12 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { useStore } from "../store";
-import { nextTerminalConnectionAttempt, startTerminalSession, terminalBackendSessionId, type RemoveListener } from "../terminalSession";
+import {
+  nextTerminalConnectionAttempt,
+  startTerminalSession,
+  terminalBackendSessionId,
+  type RemoveListener,
+} from "../terminalSession";
 import type { Server } from "../types";
 
 interface Props {
@@ -24,7 +29,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
   const fitRef = useRef<FitAddon | null>(null);
   const pushAlert = useStore((s) => s.pushAlert);
   const [conn, setConn] = useState<ConnState>("connecting");
-  const [generation, setGeneration] = useState(0); // bumped on reconnect
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -32,7 +37,11 @@ export function TerminalTab({ tabId, server, active }: Props) {
     const unlisteners: RemoveListener[] = [];
     let spawned = false;
     let ioErrorShown = false;
-    const backendSessionId = terminalBackendSessionId(tabId, generation, nextTerminalConnectionAttempt());
+    const backendSessionId = terminalBackendSessionId(
+      tabId,
+      generation,
+      nextTerminalConnectionAttempt(),
+    );
 
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace',
@@ -44,8 +53,14 @@ export function TerminalTab({ tabId, server, active }: Props) {
         foreground: "#c9d4e0",
         cursor: "#2dd4bf",
         selectionBackground: "#1d4e73",
-        black: "#0a0e14", red: "#f85149", green: "#3fb950", yellow: "#d29922",
-        blue: "#4aa8ff", magenta: "#a371f7", cyan: "#2dd4bf", white: "#e6edf3",
+        black: "#0a0e14",
+        red: "#f85149",
+        green: "#3fb950",
+        yellow: "#d29922",
+        blue: "#4aa8ff",
+        magenta: "#a371f7",
+        cyan: "#2dd4bf",
+        white: "#e6edf3",
       },
     });
     const fit = new FitAddon();
@@ -57,9 +72,10 @@ export function TerminalTab({ tabId, server, active }: Props) {
 
     try {
       fit.fit();
-    } catch { /* ignore pre-layout fit */ }
+    } catch {
+      // Ignore pre-layout fit.
+    }
 
-    // Forward keystrokes to the PTY (encode to bytes).
     const enc = new TextEncoder();
     term.onData((data) => {
       void api.ptyWrite(backendSessionId, Array.from(enc.encode(data))).catch((error) => {
@@ -70,7 +86,6 @@ export function TerminalTab({ tabId, server, active }: Props) {
       });
     });
 
-    // Keep the remote PTY size in sync with the xterm viewport.
     term.onResize(({ cols, rows }) => {
       if (spawned) void api.ptyResize(backendSessionId, cols, rows).catch(() => {});
     });
@@ -90,6 +105,19 @@ export function TerminalTab({ tabId, server, active }: Props) {
           onExit: () => {
             setConn("closed");
             term.writeln("\r\n\x1b[33m● session closed\x1b[0m");
+            // The SSH process can terminate while the terminal tab remains
+            // open. Close/reap it immediately so SQLite session history does
+            // not remain active until tab cleanup or the next app startup.
+            if (spawned) {
+              spawned = false;
+              void api.ptyClose(backendSessionId).catch((error) => {
+                pushAlert(
+                  "error",
+                  `Terminal session cleanup failed (${server.name}): ${error}`,
+                  server.id,
+                );
+              });
+            }
           },
         });
         if (disposed) {
@@ -99,41 +127,44 @@ export function TerminalTab({ tabId, server, active }: Props) {
         }
         unlisteners.push(removeListeners);
         setConn("connected");
-      } catch (err) {
+      } catch (error) {
         if (disposed) return;
         setConn("closed");
-        term.writeln(`\r\n\x1b[31m✖ connection failed: ${err}\x1b[0m`);
-        pushAlert("error", `SSH connect failed (${server.name}): ${err}`, server.id);
-        return;
+        term.writeln(`\r\n\x1b[31m✖ connection failed: ${error}\x1b[0m`);
+        pushAlert("error", `SSH connect failed (${server.name}): ${error}`, server.id);
       }
-
     }
 
     void start();
 
-    // Refit on panel resize.
-    const ro = new ResizeObserver(() => {
-      try { fit.fit(); } catch { /* noop */ }
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {
+        // No-op while hidden/pre-layout.
+      }
     });
-    ro.observe(hostRef.current);
+    resizeObserver.observe(hostRef.current);
 
     return () => {
       disposed = true;
-      ro.disconnect();
-      unlisteners.forEach((u) => u());
+      resizeObserver.disconnect();
+      unlisteners.forEach((unlisten) => unlisten());
       if (spawned) void api.ptyClose(backendSessionId).catch(() => {});
       term.dispose();
       termRef.current = null;
     };
-    // generation in deps so "reconnect" tears down and rebuilds.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, server.id, generation]);
+  }, [tabId, server.id, generation, pushAlert, server.name]);
 
-  // Refit when this tab becomes visible again.
   useEffect(() => {
     if (active && fitRef.current) {
       const id = setTimeout(() => {
-        try { fitRef.current?.fit(); termRef.current?.focus(); } catch { /* noop */ }
+        try {
+          fitRef.current?.fit();
+          termRef.current?.focus();
+        } catch {
+          // No-op while hidden/pre-layout.
+        }
       }, 30);
       return () => clearTimeout(id);
     }
@@ -142,7 +173,7 @@ export function TerminalTab({ tabId, server, active }: Props) {
   function reconnect() {
     setConn("connecting");
     termRef.current?.clear();
-    setGeneration((g) => g + 1);
+    setGeneration((value) => value + 1);
   }
 
   return (
@@ -150,12 +181,20 @@ export function TerminalTab({ tabId, server, active }: Props) {
       <div className="term-toolbar">
         <div className="term-status">
           <span className={`conn-dot ${conn}`} />
-          <span>{conn === "connected" ? "connected" : conn === "connecting" ? "connecting…" : "closed"}</span>
+          <span>
+            {conn === "connected" ? "connected" : conn === "connecting" ? "connecting…" : "closed"}
+          </span>
         </div>
-        <span className="muted mono">{server.username}@{server.host}:{server.port}</span>
+        <span className="muted mono">
+          {server.username}@{server.host}:{server.port}
+        </span>
         <span className="grow" style={{ flex: 1 }} />
-        <button className="tiny" onClick={reconnect}>Reconnect</button>
-        <button className="tiny ghost" onClick={() => termRef.current?.clear()}>Clear</button>
+        <button className="tiny" onClick={reconnect}>
+          Reconnect
+        </button>
+        <button className="tiny ghost" onClick={() => termRef.current?.clear()}>
+          Clear
+        </button>
       </div>
       <div className="terminal-host" ref={hostRef} />
     </>

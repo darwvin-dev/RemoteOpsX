@@ -61,6 +61,9 @@ jobs:
       - name: Version consistency
         run: npm run version:check
 
+      - name: Security invariants
+        run: bash scripts/security-gates.sh
+
       - name: Dependency audit
         run: npm audit --audit-level=high
 
@@ -102,6 +105,9 @@ jobs:
 
       - name: Version consistency
         run: npm run version:check
+
+      - name: Security invariants
+        run: bash scripts/security-gates.sh
 
       - name: Frontend tests
         run: npm test

@@ -8,13 +8,14 @@ RemoteOpsX combines SSH/SFTP/FTP/RDP/VNC access, agentless server-health monitor
 
 ## Project status
 
-RemoteOpsX is a validated MVP undergoing production hardening. The core operator workflows are implemented; the remaining release blockers are explicit SSH host-identity trust, runtime dependency preflight, restart reconciliation, centralized secret redaction, live integration fixtures, packaged-app E2E coverage, and signed distribution.
+RemoteOpsX is a validated MVP undergoing release verification. The core operator workflows and the P0 implementation for explicit SSH host trust, runtime dependency preflight, restart reconciliation, and known-secret redaction are implemented. The remaining public-release blockers are the live SSH integration fixture, packaged-app E2E/security coverage, signed distribution, and repository-side enforcement of the documented branch-protection policy.
 
 Current automated checks:
 
 ```bash
 npm ci
 npm run version:check
+bash scripts/security-gates.sh
 npm audit --audit-level=high
 npm test
 npm run build
@@ -25,7 +26,7 @@ cargo build --locked --manifest-path src-tauri/Cargo.toml
 
 CI runs the relevant gates on Linux and macOS. Tagged releases repeat the release preflight, verify that the tag matches the application version, build platform bundles, publish SHA-256 manifests, and generate GitHub release notes.
 
-See [TODO.md](TODO.md) for the production roadmap, [CHANGELOG.md](CHANGELOG.md) for product changes, and [CONTRIBUTING.md](CONTRIBUTING.md) for the release discipline.
+See [TODO.md](TODO.md) for the production roadmap, [CHANGELOG.md](CHANGELOG.md) for product changes, [CONTRIBUTING.md](CONTRIBUTING.md) for the release discipline, and [.github/BRANCH_PROTECTION.md](.github/BRANCH_PROTECTION.md) for the required `main` protection contract.
 
 ## Why it is different from a normal terminal
 
@@ -36,7 +37,7 @@ See [TODO.md](TODO.md) for the production roadmap, [CHANGELOG.md](CHANGELOG.md) 
 | Diagnosis steps live in memory | Versioned, confirmation-gated executable runbooks |
 | Credentials scattered across tools | Password secrets in the OS keyring; SQLite stores references only |
 | Manual log collection | Logs panel + diagnostic bundle workflow |
-| Trial-and-error connection debugging | Read-only saved-profile SSH diagnostics with actionable failure classes |
+| Trial-and-error connection debugging | Runtime preflight + explicit SSH fingerprint trust + read-only connection diagnostics |
 
 Health collection runs over a separate SSH exec path and does not interfere with the interactive terminal PTY.
 
@@ -44,16 +45,20 @@ Health collection runs over a separate SSH exec path and does not interfere with
 
 - **Server Manager** — profile CRUD, independent protocol ports, tags, groups, environment classification, notes, search, and SQLite persistence.
 - **SSH Terminal** — xterm.js terminal tabs backed by PTYs driving the system OpenSSH client.
-- **SSH diagnostics** — read-only focused-host probe through the same auth/keyring/host-key path used by live operations.
+- **SSH host identity** — app-managed `known_hosts`, SHA-256 fingerprint preview, explicit Trust / Replace / Remove, and strict host-key enforcement across terminal, exec, SCP, and tunnels.
+- **Runtime preflight** — checks core OpenSSH tooling and profile-specific password, FTP, RDP, VNC, and keyring dependencies before live operations.
+- **SSH diagnostics** — read-only focused-host probe through the same auth/keyring/strict-host-key path used by live operations.
 - **SFTP-style browser** — list/upload/download/delete/rename over SSH/SCP.
 - **Legacy FTP** — curl-backed file operations with plaintext-protocol warning.
 - **RDP** — external FreeRDP launcher using certificate TOFU and stdin credential delivery for stored passwords.
-- **VNC** — external installed-viewer launcher.
+- **VNC** — external installed-viewer launcher; macOS can use Screen Sharing via `open`.
 - **Live Health** — agentless CPU, RAM, swap, disks, load, uptime, network rate, processes, ports, and failed services.
 - **Services** — inspect/status/logs and confirmation-gated start/stop/restart.
 - **Logs / diagnostic bundles** — remote log and journal collection with local export.
 - **Runbooks** — YAML steps, variables, confirmation boundaries, output capture, and persisted history.
 - **SSH tunnels** — local, remote, and dynamic SOCKS forwards with persisted records and live-process reconciliation.
+- **Startup recovery** — stale sessions/runbooks are marked interrupted and stale persisted tunnel state is reconciled after an unclean restart.
+- **Known-secret redaction** — keyring secrets are centrally registered and masked from buffered remote output, backend errors/logging, runbook results, and exported text; known credentials are rejected from persisted profile metadata, snippets, and runbooks.
 - **Session history** and **command snippets**.
 - **Settings** — theme, ports, health refresh, history retention, transfer behavior, and desktop options.
 
@@ -70,24 +75,30 @@ src/                         React + TypeScript frontend
 src-tauri/src/               Rust backend
   lib.rs                     Tauri command surface + AppState
   database.rs                SQLite schema + queries
-  error.rs                   stable IPC error payload
-  vault.rs                   OS keyring access
-  ssh_manager.rs             OpenSSH argv + one-shot exec
-  pty_manager.rs             interactive SSH PTYs
+  error.rs                   stable/redacted IPC error payload
+  vault.rs                   OS keyring + secret registration
+  host_identity.rs           app-managed SSH known_hosts / fingerprints
+  runtime_preflight.rs       local dependency/keyring readiness
+  recovery.rs                startup stale-state reconciliation
+  redaction.rs               central known-secret masking/rejection
+  ssh_manager.rs             strict OpenSSH + stdin one-shot exec
+  pty_manager.rs             interactive SSH PTYs + streaming redaction
   health_collector.rs        agentless health probes
   runbook_runner.rs          runbook parser/executor
-  sftp_manager.rs            SSH/SCP file operations
+  sftp_manager.rs            strict SSH/SCP file operations
   ftp_manager.rs             curl FTP operations
   rdp_adapter.rs             FreeRDP launcher
   vnc_adapter.rs             VNC launcher
-  tunnel_manager.rs          SSH forward process registry
+  tunnel_manager.rs          strict SSH forward process registry
 ```
 
 The transport layer intentionally uses mature system clients so native transports can be introduced later without coupling UI workflows to a specific SSH/RDP implementation.
 
-## Local data and secrets
+## Local data, trust, and secrets
 
 Operational metadata is stored in `remoteopsx.db` under Tauri's per-user application data directory. Passwords are not stored in SQLite: the database contains a `secret_ref`, while the secret itself is stored through the OS keyring/Secret Service.
+
+RemoteOpsX also owns a dedicated `known_hosts` file under its application data directory. SSH, SCP, PTY sessions, and tunnels use that file with `StrictHostKeyChecking=yes`. A first-seen key is not trusted automatically: the Diagnostics panel shows SHA-256 fingerprints and requires an explicit operator Trust action after out-of-band verification. A changed key remains blocked until an explicit Replace action.
 
 SQLite is bundled into the Rust binary; no system SQLite package is required.
 
@@ -95,12 +106,14 @@ SQLite is bundled into the Rust binary; no system SQLite package is required.
 
 | Tool | Used for | Required? |
 | --- | --- | --- |
-| `ssh`, `scp` | SSH, SFTP-style operations, health, runbooks, tunnels | **Yes** |
-| OS Secret Service / keyring backend | password secret storage | **Yes for stored passwords** |
+| `ssh`, `scp`, `ssh-keyscan`, `ssh-keygen` | SSH transport, SFTP-style operations, fingerprint trust, health, runbooks, tunnels | **Yes** |
+| OS Secret Service / keyring backend | stored password secret storage | **For stored-password profiles** |
 | `sshpass` | non-interactive SSH password auth | Only for password-auth profiles |
 | `curl` | legacy FTP | Only for FTP |
 | `xfreerdp3` / `xfreerdp` | RDP | Only for RDP |
-| VNC viewer (`vncviewer`, TigerVNC, Remmina, etc.) | VNC | Only for VNC |
+| platform VNC viewer / macOS Screen Sharing | VNC | Only for VNC |
+
+The Diagnostics panel evaluates optional dependencies against the selected profile, so an SSH-key-only user is not blocked by missing FreeRDP, VNC, FTP, or password-auth tooling.
 
 Example runtime packages:
 
@@ -159,11 +172,11 @@ The `0.2.0` promotion path is:
 v0.2.0-alpha.N -> v0.2.0-beta.N -> v0.2.0-rc.N -> v0.2.0
 ```
 
-PRs use Conventional Commit-style titles because squash merge titles feed the generated release history.
+PRs use Conventional Commit-style titles because merge history feeds generated release notes.
 
 ## Packaging
 
-`npm run app:build` currently produces Linux **AppImage**, **.deb**, and **.rpm** bundles. Tagged releases upload those artifacts plus SHA-256 manifests. Native Arch/pacman repository packaging and signed APT/pacman repositories are later distribution milestones after the production/security gates pass.
+`npm run app:build` currently produces Linux **AppImage**, **.deb**, and **.rpm** bundles. Tagged releases upload those artifacts plus SHA-256 manifests. Native Arch/pacman repository packaging and signed APT/pacman repositories are later distribution milestones after the live integration, packaged E2E, and signing gates pass.
 
 ## Security model
 
@@ -171,23 +184,29 @@ Current protections:
 
 - Passwords are stored in the OS keyring and are not persisted as plaintext in SQLite.
 - SSH/SCP password auth uses `sshpass -e`, keeping the password out of argv.
-- FreeRDP stored passwords are delivered over stdin rather than `/p:<password>` argv.
+- One-shot SSH command text is sent through SSH stdin rather than embedded in the local process argv.
+- SSH first contact requires explicit SHA-256 fingerprint Trust; all SSH-derived transports use the app-managed known-hosts file with strict verification.
+- Changed SSH identities remain blocked until the operator independently verifies and explicitly replaces the stored identity.
+- FreeRDP stored passwords are delivered over stdin rather than password argv.
 - FreeRDP uses certificate TOFU instead of unconditional certificate ignore.
+- Known keyring secrets are centrally redacted before buffered IPC output, runbook persistence, backend error/log delivery, and local text/diagnostic export.
+- Known stored credentials are rejected when saving profile metadata, user runbooks, or command snippets to SQLite.
+- Interactive PTY output retains streaming redaction so a known password split across read chunks is masked.
+- Startup reconciliation prevents stale sessions/runbooks/tunnel rows from continuing to claim active state after a crash/restart.
 - Private-key paths, not key contents, are persisted.
 - Destructive service/runbook actions retain explicit confirmation boundaries.
 - The production WebView uses a restrictive CSP.
+- CI contains source-level regression barriers against weakened SSH/RDP verification and credential-in-argv patterns.
 
-Current release blockers:
+Remaining release blockers:
 
-- SSH first contact still uses OpenSSH `StrictHostKeyChecking=accept-new`; explicit app-managed fingerprint trust is P0.
-- Runtime dependency/keyring readiness is not yet surfaced centrally at startup.
-- Central secret redaction is not yet guaranteed across every output/persistence/export path.
-- Stale sessions need deterministic startup reconciliation; tunnel reconciliation currently happens when tunnels are listed.
-- RDP/VNC remain external windows.
-- FTP is plaintext by protocol design.
+- Live ephemeral-SSH integration tests must verify key/password auth, PTY/exec/SCP/tunnel behavior, and host-key mismatch rejection against a real SSH server.
+- Packaged desktop E2E/security tests must cover fresh install, upgrade, keyring/dependency failures, destructive confirmation boundaries, and diagnostic-export leakage.
 - Release artifacts have checksums but are not yet signed/notarized.
+- The repository-side `main` branch protection/ruleset must enforce the required CI checks documented in `.github/BRANCH_PROTECTION.md`.
+- RDP/VNC remain external windows and FTP remains plaintext by protocol design; these are product limitations rather than blockers for the hardened SSH release path.
 
-Do not treat an alpha build as production-ready until the P0 gates in [TODO.md](TODO.md) are complete.
+Do not treat an alpha build as production-ready until the remaining gates in [TODO.md](TODO.md) are complete.
 
 ## License
 

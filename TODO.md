@@ -20,13 +20,13 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - ✅ Linux/macOS dependency bootstrap and Linux/macOS release workflows
 
 ## P0 — production trust and reliability
-- 🚧 **Host identity trust** — current OpenSSH transport uses `StrictHostKeyChecking=accept-new`, so changed keys are rejected but first contact is implicit. Add a known-hosts UI with fingerprint preview, explicit trust/replace/remove actions and clear changed-key recovery.
-- ✅ **RDP credential/certificate baseline** — use certificate TOFU instead of unconditional certificate ignore, and send stored passwords through stdin rather than process argv.
-- ⬜ **Runtime preflight** — detect required/optional binaries and keyring availability at startup; show actionable status for OpenSSH, SCP, curl, sshpass, FreeRDP and VNC before a user hits a failure.
-- ✅ **Connection diagnostics** — focused-host read-only SSH test using the same transport/auth/keyring/host-key path as live operations, with latency plus actionable DNS/network/auth/host-key/dependency/credential failure classification.
+- ✅ **Host identity trust** — RemoteOpsX owns a dedicated `known_hosts` file. Terminal, one-shot SSH, SCP and tunnels use `StrictHostKeyChecking=yes`; first contact requires fingerprint review and explicit Trust, changed keys require explicit Replace, and stored trust can be removed.
+- ✅ **RDP credential/certificate baseline** — certificate TOFU replaces unconditional certificate ignore, and stored passwords are sent through stdin rather than process argv.
+- ✅ **Runtime preflight** — startup/Diagnostics checks OpenSSH (`ssh`, `scp`, `ssh-keyscan`, `ssh-keygen`), password helper, curl, FreeRDP, VNC viewer and keyring readiness with required/optional status.
+- ✅ **Connection diagnostics** — focused-host read-only SSH test uses the same transport/auth/keyring/host-key path as live operations, with latency plus actionable DNS/network/auth/host-key/dependency/credential failure classification.
 - ⬜ **Live SSH integration fixture** — CI test against an ephemeral SSH server covering key auth, password auth, exec, PTY, SCP/SFTP operations and host-key mismatch behavior.
-- ⬜ **Crash/restart reconciliation** — close stale session rows on startup and reconcile orphaned tunnel/session state deterministically.
-- ⬜ **Secret-masking pass** — central redaction for command/log/runbook output, diagnostic bundles and error payloads; add regression tests for stored credentials and user-defined sensitive values.
+- ✅ **Crash/restart reconciliation** — startup marks stale sessions/runbooks interrupted and persisted active/starting tunnels stopped; graceful tunnel-manager teardown kills/reaps managed SSH tunnel children.
+- ✅ **Secret-masking pass (known vault secrets)** — vault reads/writes register secrets centrally and existing credential references are preloaded from the keyring at startup on a best-effort basis. Buffered SSH output, remote errors, runbook results, diagnostic/local text export and backend logging are redacted before IPC/storage/export. New profile metadata, runbook names/descriptions/YAML, snippet labels/commands/tags and persisted tunnel endpoint text reject known stored credentials before SQLite persistence. PTY output retains its streaming password redactor for split chunks. Live integration tests remain the next verification layer.
 - ⬜ **Signed releases** — code-sign/notarize macOS artifacts and sign Linux release artifacts. Checksums are published, but signatures are still required for a strong distribution trust chain.
 
 ## P1 — operator depth
@@ -48,7 +48,9 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - ✅ Frontend regression tests
 - ✅ Rust unit tests
 - ✅ CI runs frontend tests, TypeScript/Vite build, Rust formatting, Rust tests and locked Rust build on Linux and macOS
+- ✅ CI includes source-level security invariants that reject weakened SSH/RDP trust and credential-argv patterns
 - ✅ Release workflows repeat preflight checks and publish SHA-256 checksum manifests
 - ✅ Automated npm/Cargo/GitHub Actions dependency update checks
+- ⬜ Live SSH integration fixture
 - ⬜ End-to-end desktop smoke suite for the packaged application
-- ⬜ Security-focused tests for host identity, credential exposure, path handling and destructive operations
+- 🚧 Security-focused tests — unit/source gates now cover host identity and known-secret exposure; live transport, filesystem path and packaged-app destructive-operation coverage remains for the integration/E2E phases.
