@@ -2,14 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSettingsStore } from "../settingsStore";
 import type {
   DefaultPorts,
+  TerminalCursorStyle,
   TerminalFont,
   Theme,
   TransferConflictPolicy,
+  UiDensity,
   UiFont,
 } from "../settings";
 import {
+  TERMINAL_CURSOR_OPTIONS,
   TERMINAL_FONT_OPTIONS,
   THEME_OPTIONS,
+  UI_DENSITY_OPTIONS,
   UI_FONT_OPTIONS,
   terminalFontStack,
   uiFontStack,
@@ -27,7 +31,14 @@ const PORTS: { key: keyof DefaultPorts; label: string }[] = [
   { key: "vnc", label: "VNC default port" },
 ];
 
-type NumericKey = keyof DefaultPorts | "health" | "history" | "lock";
+type NumericKey =
+  | keyof DefaultPorts
+  | "health"
+  | "history"
+  | "lock"
+  | "terminalFontSize"
+  | "terminalLineHeight"
+  | "terminalOpacity";
 type NumericDrafts = Record<NumericKey, string>;
 
 const numericDrafts = (settings: ReturnType<typeof useSettingsStore.getState>["settings"]): NumericDrafts => ({
@@ -38,6 +49,9 @@ const numericDrafts = (settings: ReturnType<typeof useSettingsStore.getState>["s
   health: String(settings.health_refresh_interval_ms / 1000),
   history: String(settings.history_retention_days),
   lock: String(settings.app_lock_timeout_minutes),
+  terminalFontSize: String(settings.terminal_font_size),
+  terminalLineHeight: String(settings.terminal_line_height_percent),
+  terminalOpacity: String(settings.terminal_background_opacity_percent),
 });
 
 export function SettingsModal({ onClose, returnFocus }: Props) {
@@ -60,6 +74,7 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
   const draftsDirty = JSON.stringify(drafts) !== JSON.stringify(numericDrafts(settings));
   const hasUnsavedChanges = dirty || draftsDirty;
   const selectedTheme = THEME_OPTIONS.find((option) => option.value === settings.theme);
+  const selectedDensity = UI_DENSITY_OPTIONS.find((option) => option.value === settings.ui_density);
 
   const discardChanges = useCallback(() => {
     if (saving || loading) return;
@@ -95,6 +110,9 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
     settings.default_ports.vnc,
     settings.health_refresh_interval_ms,
     settings.history_retention_days,
+    settings.terminal_background_opacity_percent,
+    settings.terminal_font_size,
+    settings.terminal_line_height_percent,
   ]);
 
   useEffect(() => {
@@ -138,6 +156,9 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
       health: [1, 60],
       history: [1, 3650],
       lock: [1, 1440],
+      terminalFontSize: [10, 24],
+      terminalLineHeight: [100, 200],
+      terminalOpacity: [55, 100],
     };
     const value = Number(drafts[key]);
     const [minimum, maximum] = limits[key];
@@ -151,6 +172,9 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
     if (key === "health") patch({ health_refresh_interval_ms: value * 1000 });
     else if (key === "history") patch({ history_retention_days: value });
     else if (key === "lock") patch({ app_lock_timeout_minutes: value });
+    else if (key === "terminalFontSize") patch({ terminal_font_size: value });
+    else if (key === "terminalLineHeight") patch({ terminal_line_height_percent: value });
+    else if (key === "terminalOpacity") patch({ terminal_background_opacity_percent: value });
     else patch({ default_ports: { [key]: value } });
     setFieldErrors((current) => ({ ...current, [key]: undefined }));
     return true;
@@ -159,7 +183,18 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (loading || saving || submitInFlightRef.current) return;
-    const valid = (["ssh", "ftp", "rdp", "vnc", "health", "history", "lock"] as NumericKey[])
+    const valid = ([
+      "ssh",
+      "ftp",
+      "rdp",
+      "vnc",
+      "health",
+      "history",
+      "lock",
+      "terminalFontSize",
+      "terminalLineHeight",
+      "terminalOpacity",
+    ] as NumericKey[])
       .map(commitNumber)
       .every(Boolean);
     if (!valid || !useSettingsStore.getState().dirty) return;
@@ -210,6 +245,19 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
                   <small className="appearance-help">{selectedTheme?.description}</small>
                 </div>
                 <div>
+                  <label htmlFor="settings-density">Interface density</label>
+                  <select
+                    id="settings-density"
+                    value={settings.ui_density}
+                    onChange={(event) => patch({ ui_density: event.target.value as UiDensity })}
+                  >
+                    {UI_DENSITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <small className="appearance-help">{selectedDensity?.description}</small>
+                </div>
+                <div>
                   <label htmlFor="settings-ui-font">Interface font</label>
                   <select
                     id="settings-ui-font"
@@ -235,13 +283,77 @@ export function SettingsModal({ onClose, returnFocus }: Props) {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                  <div className="font-preview mono" style={{ fontFamily: terminalFontStack(settings.terminal_font) }}>
+                  <div
+                    className="font-preview mono"
+                    style={{
+                      fontFamily: terminalFontStack(settings.terminal_font),
+                      fontSize: `${settings.terminal_font_size}px`,
+                      lineHeight: settings.terminal_line_height_percent / 100,
+                    }}
+                  >
                     user@server:~$ systemctl status
                   </div>
                 </div>
               </div>
+
+              <div className="terminal-appearance-grid">
+                <div>
+                  <label htmlFor="settings-terminal-size">Terminal font size</label>
+                  <input
+                    id="settings-terminal-size"
+                    type="number"
+                    min={10}
+                    max={24}
+                    step={1}
+                    value={drafts.terminalFontSize}
+                    aria-invalid={fieldErrors.terminalFontSize ? "true" : undefined}
+                    onChange={(event) => editNumber("terminalFontSize", event.target.value)}
+                    onBlur={() => commitNumber("terminalFontSize")}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="settings-terminal-line-height">Line height (%)</label>
+                  <input
+                    id="settings-terminal-line-height"
+                    type="number"
+                    min={100}
+                    max={200}
+                    step={5}
+                    value={drafts.terminalLineHeight}
+                    aria-invalid={fieldErrors.terminalLineHeight ? "true" : undefined}
+                    onChange={(event) => editNumber("terminalLineHeight", event.target.value)}
+                    onBlur={() => commitNumber("terminalLineHeight")}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="settings-terminal-cursor">Cursor style</label>
+                  <select
+                    id="settings-terminal-cursor"
+                    value={settings.terminal_cursor_style}
+                    onChange={(event) => patch({ terminal_cursor_style: event.target.value as TerminalCursorStyle })}
+                  >
+                    {TERMINAL_CURSOR_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="settings-terminal-opacity">Background opacity (%)</label>
+                  <input
+                    id="settings-terminal-opacity"
+                    type="number"
+                    min={55}
+                    max={100}
+                    step={5}
+                    value={drafts.terminalOpacity}
+                    aria-invalid={fieldErrors.terminalOpacity ? "true" : undefined}
+                    onChange={(event) => editNumber("terminalOpacity", event.target.value)}
+                    onBlur={() => commitNumber("terminalOpacity")}
+                  />
+                </div>
+              </div>
               <small className="appearance-help">
-                Font presets use locally installed fonts and automatically fall back to a safe system family.
+                Appearance changes preview live. Font presets use locally installed fonts with safe fallbacks; terminal transparency never affects controls or diagnostics.
               </small>
             </section>
 

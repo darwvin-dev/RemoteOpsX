@@ -6,11 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { useStore } from "../store";
 import { useSettingsStore } from "../settingsStore";
-import {
-  SYSTEM_THEME_QUERY,
-  terminalFontStack,
-  terminalTheme,
-} from "../theme";
+import { SYSTEM_THEME_QUERY, terminalFontStack, terminalTheme } from "../theme";
 import {
   nextTerminalConnectionAttempt,
   startTerminalSession,
@@ -36,6 +32,10 @@ export function TerminalTab({ tabId, server, active }: Props) {
   const pushAlert = useStore((s) => s.pushAlert);
   const theme = useSettingsStore((state) => state.settings.theme);
   const terminalFont = useSettingsStore((state) => state.settings.terminal_font);
+  const terminalFontSize = useSettingsStore((state) => state.settings.terminal_font_size);
+  const terminalLineHeight = useSettingsStore((state) => state.settings.terminal_line_height_percent);
+  const terminalCursorStyle = useSettingsStore((state) => state.settings.terminal_cursor_style);
+  const terminalOpacity = useSettingsStore((state) => state.settings.terminal_background_opacity_percent);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [generation, setGeneration] = useState(0);
 
@@ -54,10 +54,13 @@ export function TerminalTab({ tabId, server, active }: Props) {
 
     const term = new Terminal({
       fontFamily: terminalFontStack(terminalFont),
-      fontSize: 13,
+      fontSize: terminalFontSize,
+      lineHeight: terminalLineHeight / 100,
       cursorBlink: true,
+      cursorStyle: terminalCursorStyle,
+      allowTransparency: true,
       scrollback: 5000,
-      theme: terminalTheme(theme, systemPrefersDark),
+      theme: terminalTheme(theme, systemPrefersDark, terminalOpacity),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -155,7 +158,10 @@ export function TerminalTab({ tabId, server, active }: Props) {
       const term = termRef.current;
       if (!term) return;
       term.options.fontFamily = terminalFontStack(terminalFont);
-      term.options.theme = terminalTheme(theme, media.matches);
+      term.options.fontSize = terminalFontSize;
+      term.options.lineHeight = terminalLineHeight / 100;
+      term.options.cursorStyle = terminalCursorStyle;
+      term.options.theme = terminalTheme(theme, media.matches, terminalOpacity);
       try {
         fitRef.current?.fit();
       } catch {
@@ -166,7 +172,14 @@ export function TerminalTab({ tabId, server, active }: Props) {
     if (theme !== "system") return;
     media.addEventListener("change", applyTerminalAppearance);
     return () => media.removeEventListener("change", applyTerminalAppearance);
-  }, [terminalFont, theme]);
+  }, [
+    terminalCursorStyle,
+    terminalFont,
+    terminalFontSize,
+    terminalLineHeight,
+    terminalOpacity,
+    theme,
+  ]);
 
   useEffect(() => {
     if (active && fitRef.current) {

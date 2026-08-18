@@ -1,0 +1,122 @@
+/* Density presets and advanced appearance controls. Loaded after appearance.css. */
+
+.terminal-appearance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+:root[data-density="compact"] .app {
+  grid-template-columns: 248px minmax(0, 1fr) 320px;
+  grid-template-rows: 40px minmax(0, 1fr) auto;
+}
+
+:root[data-density="compact"] .app.right-collapsed {
+  grid-template-columns: 248px minmax(0, 1fr) 0;
+}
+
+:root[data-density="compact"] body {
+  font-size: 12px;
+}
+
+:root[data-density="compact"] button {
+  padding: 5px 9px;
+}
+
+:root[data-density="compact"] button.tiny {
+  padding: 3px 7px;
+}
+
+:root[data-density="compact"] input,
+:root[data-density="compact"] select,
+:root[data-density="compact"] textarea {
+  padding: 6px 8px;
+}
+
+:root[data-density="compact"] .topbar {
+  padding-inline: 8px;
+  gap: 6px;
+}
+
+:root[data-density="compact"] .sidebar-head {
+  padding: 9px;
+  gap: 7px;
+}
+
+:root[data-density="compact"] .server-list {
+  padding: 5px;
+}
+
+:root[data-density="compact"] .appearance-grid,
+:root[data-density="compact"] .terminal-appearance-grid,
+:root[data-density="compact"] .settings-grid {
+  gap: 7px;
+}
+
+:root[data-density="spacious"] .app {
+  grid-template-columns: 288px minmax(0, 1fr) 372px;
+  grid-template-rows: 52px minmax(0, 1fr) auto;
+}
+
+:root[data-density="spacious"] .app.right-collapsed {
+  grid-template-columns: 288px minmax(0, 1fr) 0;
+}
+
+:root[data-density="spacious"] body {
+  font-size: 14px;
+}
+
+:root[data-density="spacious"] button {
+  padding: 9px 13px;
+}
+
+:root[data-density="spacious"] button.tiny {
+  padding: 6px 10px;
+}
+
+:root[data-density="spacious"] input,
+:root[data-density="spacious"] select,
+:root[data-density="spacious"] textarea {
+  padding: 10px 12px;
+}
+
+:root[data-density="spacious"] .topbar {
+  padding-inline: 14px;
+  gap: 10px;
+}
+
+:root[data-density="spacious"] .sidebar-head {
+  padding: 15px;
+  gap: 12px;
+}
+
+:root[data-density="spacious"] .server-list {
+  padding: 10px;
+}
+
+:root[data-density="spacious"] .appearance-grid,
+:root[data-density="spacious"] .terminal-appearance-grid,
+:root[data-density="spacious"] .settings-grid {
+  gap: 13px;
+}
+
+@media (max-width: 1100px) {
+  :root[data-density="compact"] .app,
+  :root[data-density="spacious"] .app {
+    grid-template-columns: 240px minmax(0, 1fr) 320px;
+  }
+
+  :root[data-density="compact"] .app.right-collapsed,
+  :root[data-density="spacious"] .app.right-collapsed {
+    grid-template-columns: 240px minmax(0, 1fr) 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .terminal-appearance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

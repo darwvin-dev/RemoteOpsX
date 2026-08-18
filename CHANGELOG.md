@@ -9,8 +9,10 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 ### Added
 - Appearance presets now include Obsidian, Paper, Nord, Dracula, Tokyo Night, Solarized Dark, and Solarized Light, plus system-following mode.
 - Interface font presets include System UI, Inter, IBM Plex Sans, Noto Sans, Ubuntu, and Roboto with safe local fallbacks.
+- Interface density presets now include Compact, Comfortable, and Spacious layouts.
 - Terminal font presets include JetBrains Mono, Fira Code, Cascadia Code, IBM Plex Mono, Source Code Pro, DejaVu Sans Mono, and system monospace.
-- Terminal palette and font changes apply live to existing SSH tabs without reconnecting the session.
+- Terminal appearance controls now include font size, line height, block/underline/bar cursor style, and bounded background opacity.
+- Terminal palette, font, cursor, sizing, spacing, and opacity changes apply to existing SSH tabs without reconnecting the session.
 
 ### Security
 - SSH first contact now uses an app-managed `known_hosts` store with SHA-256 fingerprint preview and explicit Trust / Replace / Remove actions; terminal, one-shot exec, SCP, and tunnels all require strict host-key verification.
@@ -27,7 +29,7 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 - SSH terminal exit closes the persisted session immediately; PTY and tunnel child processes are killed and reaped deterministically instead of lingering until process exit.
 
 ### Changed
-- Appearance settings remain schema-1 compatible: older saved settings load the new interface/terminal font defaults automatically.
+- Appearance settings remain schema-1 compatible: older saved settings load the new interface/terminal font, density, cursor, sizing, spacing, and opacity defaults automatically.
 - Release tooling treats `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` as one versioned product.
 - Node and Rust toolchains are pinned for CI and tagged release builds so toolchain drift is explicit and reviewable.
 

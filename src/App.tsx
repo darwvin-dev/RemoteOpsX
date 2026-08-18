@@ -34,6 +34,7 @@ export default function App() {
   const loadSettings = useSettingsStore((state) => state.load);
   const theme = useSettingsStore((state) => state.settings.theme);
   const uiFont = useSettingsStore((state) => state.settings.ui_font);
+  const uiDensity = useSettingsStore((state) => state.settings.ui_density);
   const settingsInitialized = useSettingsStore((state) => state.initialized);
   const settingsLoadFailed = useSettingsStore((state) => state.error !== null && state.initialized);
 
@@ -63,12 +64,13 @@ export default function App() {
       document.documentElement.dataset.theme = resolveTheme(theme, media.matches);
       document.documentElement.dataset.themePreset = resolveThemePreset(theme, media.matches);
       document.documentElement.dataset.uiFont = uiFont;
+      document.documentElement.dataset.density = uiDensity;
     };
     applyAppearance();
     if (theme !== "system") return;
     media.addEventListener("change", applyAppearance);
     return () => media.removeEventListener("change", applyAppearance);
-  }, [settingsInitialized, theme, uiFont]);
+  }, [settingsInitialized, theme, uiDensity, uiFont]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

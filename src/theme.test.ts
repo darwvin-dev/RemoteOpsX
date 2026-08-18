@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  TERMINAL_CURSOR_OPTIONS,
   TERMINAL_FONT_OPTIONS,
   THEME_OPTIONS,
+  UI_DENSITY_OPTIONS,
   UI_FONT_OPTIONS,
   resolveTheme,
   resolveThemePreset,
@@ -26,11 +28,13 @@ describe("appearance presets", () => {
     }
   });
 
-  it("ships a substantial preset set without duplicate ids", () => {
+  it("ships complete appearance choice sets without duplicate ids", () => {
     expect(THEME_OPTIONS).toHaveLength(8);
     expect(new Set(THEME_OPTIONS.map((option) => option.value)).size).toBe(THEME_OPTIONS.length);
     expect(UI_FONT_OPTIONS.length).toBeGreaterThanOrEqual(6);
     expect(TERMINAL_FONT_OPTIONS.length).toBeGreaterThanOrEqual(7);
+    expect(UI_DENSITY_OPTIONS.map((option) => option.value)).toEqual(["compact", "comfortable", "spacious"]);
+    expect(TERMINAL_CURSOR_OPTIONS.map((option) => option.value)).toEqual(["block", "underline", "bar"]);
   });
 
   it("returns deterministic font stacks with safe fallbacks", () => {
@@ -48,5 +52,11 @@ describe("appearance presets", () => {
       expect(palette.cursor).toMatch(/^#[0-9a-f]{6}$/i);
     }
     expect(terminalTheme("dracula", true).background).not.toBe(terminalTheme("nord", true).background);
+  });
+
+  it("keeps opaque terminal colors stable and converts lower opacity to rgba", () => {
+    expect(terminalTheme("dark", true, 100).background).toBe("#05080d");
+    expect(terminalTheme("dark", true, 80).background).toBe("rgba(5, 8, 13, 0.8)");
+    expect(terminalTheme("solarized_light", false, 55).background).toBe("rgba(253, 246, 227, 0.55)");
   });
 });

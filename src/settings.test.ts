@@ -32,7 +32,12 @@ describe("settings contracts", () => {
       schema_version: 1,
       theme: "system",
       ui_font: "system",
+      ui_density: "comfortable",
       terminal_font: "jetbrains_mono",
+      terminal_font_size: 13,
+      terminal_line_height_percent: 100,
+      terminal_cursor_style: "block",
+      terminal_background_opacity_percent: 100,
       default_ports: { ssh: 22, ftp: 21, rdp: 3389, vnc: 5900 },
       health_refresh_interval_ms: 3000,
       history_retention_days: 90,
@@ -59,9 +64,23 @@ describe("settings contracts", () => {
     ["schema_version", (settings: AppSettings): void => { settings.schema_version = 2; }],
     ["theme", (settings: AppSettings): void => { (settings as { theme: string }).theme = "blue"; }],
     ["ui_font", (settings: AppSettings): void => { (settings as { ui_font: string }).ui_font = "comic_sans"; }],
+    ["ui_density", (settings: AppSettings): void => { (settings as { ui_density: string }).ui_density = "tiny"; }],
     [
       "terminal_font",
       (settings: AppSettings): void => { (settings as { terminal_font: string }).terminal_font = "unknown_mono"; },
+    ],
+    [
+      "terminal_cursor_style",
+      (settings: AppSettings): void => { (settings as { terminal_cursor_style: string }).terminal_cursor_style = "beam"; },
+    ],
+    ["terminal_font_size", (settings: AppSettings): void => { settings.terminal_font_size = 9; }],
+    [
+      "terminal_line_height_percent",
+      (settings: AppSettings): void => { settings.terminal_line_height_percent = 99; },
+    ],
+    [
+      "terminal_background_opacity_percent",
+      (settings: AppSettings): void => { settings.terminal_background_opacity_percent = 54; },
     ],
     [
       "transfer_conflict_policy",
@@ -107,7 +126,12 @@ describe("settings contracts", () => {
         ...DEFAULT_SETTINGS,
         theme,
         ui_font: "ibm_plex_sans",
+        ui_density: "compact",
         terminal_font: "cascadia_code",
+        terminal_font_size: 15,
+        terminal_line_height_percent: 125,
+        terminal_cursor_style: "bar",
+        terminal_background_opacity_percent: 80,
         default_ports: { ...DEFAULT_SETTINGS.default_ports },
       };
       await expect(settingsSave(settings)).resolves.toMatchObject({ theme });
