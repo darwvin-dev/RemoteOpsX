@@ -1,0 +1,51 @@
+name: Refresh lockfiles (one-shot)
+
+on:
+  push:
+    branches:
+      - agent/production-readiness-baseline
+    paths:
+      - .github/workflows/refresh-lockfiles.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/production-readiness-baseline
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Refresh npm lockfile with non-breaking security fixes
+        run: npm audit fix --package-lock-only
+
+      - name: Re-resolve Cargo lockfile without compiling
+        run: cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+
+      - name: Verify npm audit after refresh
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+      - name: Commit refreshed lockfiles
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json src-tauri/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Lockfiles already current"
+          else
+            git commit -m "refresh dependency lockfiles"
+            git push origin HEAD:agent/production-readiness-baseline
+          fi
