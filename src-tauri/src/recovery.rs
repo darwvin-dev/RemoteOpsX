@@ -124,7 +124,9 @@ fn scrub_column(conn: &Connection, table: &str, column: &str) -> Result<usize> {
     let select_sql = format!("SELECT rowid, {column} FROM {table} WHERE {column} IS NOT NULL");
     let mut statement = conn.prepare(&select_sql)?;
     let values = statement
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(statement);
 
