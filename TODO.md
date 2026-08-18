@@ -23,10 +23,10 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - ✅ **Host identity trust** — RemoteOpsX owns a dedicated `known_hosts` file. Terminal, one-shot SSH, SCP and tunnels use `StrictHostKeyChecking=yes`; first contact requires fingerprint review and explicit Trust, changed keys require explicit Replace, and stored trust can be removed.
 - ✅ **RDP credential/certificate baseline** — certificate TOFU replaces unconditional certificate ignore, and stored passwords are sent through stdin rather than process argv.
 - ✅ **Runtime preflight** — startup/Diagnostics checks OpenSSH (`ssh`, `scp`, `ssh-keyscan`, `ssh-keygen`), password helper, curl, FreeRDP, VNC viewer and keyring readiness with required/optional status.
-- ✅ **Connection diagnostics** — focused-host read-only SSH test uses the same transport/auth/keyring/host-key path as live operations, with latency plus actionable DNS/network/auth/host-key/dependency/credential failure classification.
-- ⬜ **Live SSH integration fixture** — CI test against an ephemeral SSH server covering key auth, password auth, exec, PTY, SCP/SFTP operations and host-key mismatch behavior.
+- ✅ **Connection diagnostics** — focused-host read-only SSH test uses the same transport/auth/keyring/strict-host-key path as live operations, with latency plus actionable DNS/network/auth/host-key/dependency/credential failure classification.
+- ✅ **Live SSH integration fixture** — Linux CI launches ephemeral destination + bastion sshd instances and exercises key auth, password auth, exec, real PTY, SCP/SFTP operations, local forwarding, bastion routing, host-key mismatch blocking/explicit replacement and a secret-redaction canary.
 - ✅ **Crash/restart reconciliation** — startup marks stale sessions/runbooks interrupted and persisted active/starting tunnels stopped; graceful tunnel-manager teardown kills/reaps managed SSH tunnel children.
-- ✅ **Secret-masking pass (known vault secrets)** — vault reads/writes register secrets centrally and existing credential references are preloaded from the keyring at startup on a best-effort basis. Buffered SSH output, remote errors, runbook results, diagnostic/local text export and backend logging are redacted before IPC/storage/export. New profile metadata, runbook names/descriptions/YAML, snippet labels/commands/tags and persisted tunnel endpoint text reject known stored credentials before SQLite persistence. PTY output retains its streaming password redactor for split chunks. Live integration tests remain the next verification layer.
+- ✅ **Secret-masking pass (known vault secrets)** — vault reads/writes register secrets centrally and existing credential references are preloaded from the keyring at startup on a best-effort basis. Buffered SSH output, remote errors, runbook results, diagnostic/local text export and backend logging are redacted before IPC/storage/export. New profile metadata, runbook names/descriptions/YAML, snippet labels/commands/tags, jump-host metadata and persisted tunnel endpoint text reject known stored credentials before SQLite persistence. PTY output retains its streaming password redactor for split chunks.
 - ⬜ **Signed releases** — code-sign/notarize macOS artifacts and sign Linux release artifacts. Checksums are published, but signatures are still required for a strong distribution trust chain.
 
 ## P1 — operator depth
@@ -36,7 +36,7 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - ⬜ **Health history** — bounded per-server time-series retention, custom thresholds and desktop/webhook alert routing.
 - ⬜ **App lock** — optional local lock/master credential with keyring-aware unlock behavior.
 - ⬜ **Import/export** — encrypted, versioned backup/restore of profiles, settings, runbooks and snippets without exporting keyring secrets by default.
-- ⬜ **Jump hosts / ProxyJump UI** — first-class bastion configuration with validation and connection test support.
+- ✅ **Jump hosts / bastion routing** — first-class key-auth bastion configuration with strict app-owned SSH config, explicit bastion fingerprint trust, destination fingerprint inspection through the trusted bastion, and shared routing across terminal/exec/health/runbooks/SCP/tunnels.
 
 ## P2 — transport and desktop expansion
 - ⬜ Native SSH transport (for example `russh`/`libssh2`) if it materially improves host-key UX, multiplexing, passphrase prompts and portability over the hardened system-OpenSSH backend.
@@ -51,6 +51,6 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - ✅ CI includes source-level security invariants that reject weakened SSH/RDP trust and credential-argv patterns
 - ✅ Release workflows repeat preflight checks and publish SHA-256 checksum manifests
 - ✅ Automated npm/Cargo/GitHub Actions dependency update checks
-- ⬜ Live SSH integration fixture
+- ✅ Live SSH integration fixture
 - ⬜ End-to-end desktop smoke suite for the packaged application
-- 🚧 Security-focused tests — unit/source gates now cover host identity and known-secret exposure; live transport, filesystem path and packaged-app destructive-operation coverage remains for the integration/E2E phases.
+- 🚧 Security-focused tests — unit/source gates cover host identity and known-secret exposure, and live transport now covers the real SSH/SCP/PTY/tunnel path; packaged-app destructive-operation coverage remains for the desktop E2E phase.
