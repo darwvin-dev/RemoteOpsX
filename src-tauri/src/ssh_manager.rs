@@ -190,7 +190,8 @@ mod tests {
     }
 
     fn has_opt(args: &[String], value: &str) -> bool {
-        args.windows(2).any(|window| window[0] == "-o" && window[1] == value)
+        args.windows(2)
+            .any(|window| window[0] == "-o" && window[1] == value)
     }
 
     #[test]

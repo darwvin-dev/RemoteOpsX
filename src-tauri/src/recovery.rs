@@ -83,10 +83,8 @@ mod tests {
 
     #[test]
     fn startup_reconciliation_closes_stale_sessions_and_tunnels() {
-        let path = std::env::temp_dir().join(format!(
-            "remoteopsx-recovery-{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("remoteopsx-recovery-{}.db", uuid::Uuid::new_v4()));
         let conn = database::open(&path).unwrap();
         conn.execute(
             "INSERT INTO sessions (id, server_id, protocol, started_at, ended_at, status)

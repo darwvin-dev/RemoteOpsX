@@ -45,12 +45,7 @@ pub fn collect() -> RuntimePreflightReport {
         ),
         binary("sshpass", "SSH password helper", false, &["sshpass"]),
         binary("curl", "curl (legacy FTP)", false, &["curl"]),
-        binary(
-            "freerdp",
-            "FreeRDP",
-            false,
-            &["xfreerdp3", "xfreerdp"],
-        ),
+        binary("freerdp", "FreeRDP", false, &["xfreerdp3", "xfreerdp"]),
         vnc_status(),
     ];
 

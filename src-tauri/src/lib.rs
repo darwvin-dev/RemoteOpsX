@@ -11,8 +11,8 @@ pub mod host_identity;
 pub mod models;
 pub mod pty_manager;
 pub mod rdp_adapter;
-pub mod redaction;
 pub mod recovery;
+pub mod redaction;
 pub mod runbook_runner;
 pub mod runtime_preflight;
 pub mod settings;
@@ -351,8 +351,9 @@ fn runbook_save(
     description: String,
     content_yaml: String,
 ) -> CommandResult<String> {
-    reject_known_secret("content_yaml", &content_yaml)?;
-    reject_known_secret("description", &description)?;
+    reject_known_secret("runbook.name", &name)?;
+    reject_known_secret("runbook.description", &description)?;
+    reject_known_secret("runbook.content_yaml", &content_yaml)?;
     runbook_runner::parse(&content_yaml)
         .map_err(|error| DomainError::validation("content_yaml", error.to_string()))?;
     let conn = state.db.lock().unwrap();
@@ -434,7 +435,12 @@ fn command_snippet_save(
 ) -> CommandResult<CommandSnippet> {
     database::validate_snippet_input(&input)
         .map_err(|error| DomainError::validation("snippet", error.to_string()))?;
-    reject_known_secret("snippet.command", &input.command)?;
+    let snippet_text = std::iter::once(input.label.as_str())
+        .chain(std::iter::once(input.command.as_str()))
+        .chain(input.tags.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    reject_known_secret("snippet", &snippet_text)?;
     let conn = state.db.lock().unwrap();
     e(database::save_command_snippet(&conn, &input))
 }
@@ -621,6 +627,13 @@ fn tunnel_start(state: State<AppState>, tunnel: Tunnel) -> CommandResult<Tunnel>
     if tunnel.id.is_empty() {
         tunnel.id = uuid::Uuid::new_v4().to_string();
     }
+    let tunnel_text = [
+        tunnel.r#type.as_str(),
+        tunnel.local_host.as_deref().unwrap_or_default(),
+        tunnel.remote_host.as_deref().unwrap_or_default(),
+    ]
+    .join("\n");
+    reject_known_secret("tunnel", &tunnel_text)?;
     validate_tunnel_start_input(&tunnel)?;
     let server = load_server(&state, &tunnel.server_id)?;
     map_tunnel_start_result(state.tunnels.start(&server, &tunnel))?;

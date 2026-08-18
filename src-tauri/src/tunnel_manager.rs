@@ -50,7 +50,10 @@ pub(crate) fn validate_tunnel(tunnel: &Tunnel) -> Result<(), TunnelValidationErr
         return Err(TunnelValidationError::new("id", "tunnel id is required"));
     }
     if tunnel.server_id.trim().is_empty() {
-        return Err(TunnelValidationError::new("server_id", "server id is required"));
+        return Err(TunnelValidationError::new(
+            "server_id",
+            "server id is required",
+        ));
     }
     if tunnel.local_port == 0 {
         return Err(TunnelValidationError::new(
@@ -255,7 +258,8 @@ mod tests {
     }
 
     fn has_opt(args: &[String], value: &str) -> bool {
-        args.windows(2).any(|window| window[0] == "-o" && window[1] == value)
+        args.windows(2)
+            .any(|window| window[0] == "-o" && window[1] == value)
     }
 
     #[test]

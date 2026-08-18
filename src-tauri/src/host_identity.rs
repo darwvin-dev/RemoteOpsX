@@ -111,10 +111,7 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
         port,
         status: status.to_string(),
         candidates,
-        trusted_fingerprints: trusted
-            .into_iter()
-            .map(|value| value.fingerprint)
-            .collect(),
+        trusted_fingerprints: trusted.into_iter().map(|value| value.fingerprint).collect(),
     })
 }
 

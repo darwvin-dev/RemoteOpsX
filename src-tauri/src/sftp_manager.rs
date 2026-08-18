@@ -85,13 +85,19 @@ fn scp_base(server: &Server) -> Result<(String, Vec<String>)> {
 pub fn upload(server: &Server, local_path: &str, remote_dir: &str) -> Result<()> {
     let (program, mut args) = scp_base(server)?;
     args.push(local_path.to_string());
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_dir));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_dir
+    ));
     run_transfer(server, &program, &args)
 }
 
 pub fn download(server: &Server, remote_path: &str, local_path: &str) -> Result<()> {
     let (program, mut args) = scp_base(server)?;
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_path));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_path
+    ));
     args.push(local_path.to_string());
     run_transfer(server, &program, &args)
 }
@@ -127,7 +133,9 @@ fn run_transfer(server: &Server, program: &str, args: &[String]) -> Result<()> {
     if out.status.success() {
         Ok(())
     } else {
-        Err(anyhow!(redaction::redact(String::from_utf8_lossy(&out.stderr))))
+        Err(anyhow!(redaction::redact(String::from_utf8_lossy(
+            &out.stderr
+        ))))
     }
 }
 
@@ -162,7 +170,8 @@ mod tests {
     }
 
     fn has_opt(args: &[String], value: &str) -> bool {
-        args.windows(2).any(|window| window[0] == "-o" && window[1] == value)
+        args.windows(2)
+            .any(|window| window[0] == "-o" && window[1] == value)
     }
 
     #[test]
@@ -181,7 +190,12 @@ mod tests {
         let server = server("key", Some("/home/user/.ssh/id_ed25519"));
         let mut args = Vec::new();
         if let Some(key) = &server.private_key_path {
-            args.extend(["-i".into(), key.clone(), "-o".into(), "IdentitiesOnly=yes".into()]);
+            args.extend([
+                "-i".into(),
+                key.clone(),
+                "-o".into(),
+                "IdentitiesOnly=yes".into(),
+            ]);
         }
         assert!(args.iter().any(|arg| arg == "/home/user/.ssh/id_ed25519"));
         assert!(has_opt(&args, "IdentitiesOnly=yes"));
@@ -199,7 +213,8 @@ mod tests {
     #[test]
     fn parses_directories_and_strips_symlink_targets() {
         let directory = parse_ls_line("drwxr-xr-x  2 root root 4096 1710000000 releases").unwrap();
-        let symlink = parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
+        let symlink =
+            parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
         assert!(directory.is_dir);
         assert_eq!(symlink.name, "current");
     }
