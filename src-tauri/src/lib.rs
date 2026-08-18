@@ -10,6 +10,9 @@ pub mod health_collector;
 pub mod host_identity;
 pub mod jump_host;
 pub mod models;
+pub mod multi_host;
+pub mod operator_commands;
+pub mod operator_data;
 pub mod pty_manager;
 pub mod rdp_adapter;
 pub mod recovery;
@@ -20,9 +23,12 @@ pub mod settings;
 pub mod sftp_manager;
 pub mod ssh_keys;
 pub mod ssh_manager;
+pub mod transfer_manager;
 pub mod tunnel_manager;
+pub mod tunnel_resilience;
 pub mod vault;
 pub mod vnc_adapter;
+pub mod workspace_backup;
 
 use std::sync::Mutex;
 
@@ -35,6 +41,7 @@ use jump_host::JumpHostConfig;
 use models::*;
 use pty_manager::PtyManager;
 use ssh_keys::SshKeyInfo;
+use transfer_manager::TransferManager;
 use tunnel_manager::TunnelManager;
 
 pub struct AppState {
@@ -42,6 +49,7 @@ pub struct AppState {
     pty: PtyManager,
     health: health_collector::HealthState,
     tunnels: TunnelManager,
+    transfers: TransferManager,
 }
 
 fn e<T, E: std::fmt::Display>(result: Result<T, E>) -> CommandResult<T> {
@@ -819,6 +827,7 @@ pub fn run() {
                 pty: PtyManager::new(),
                 health: health_collector::HealthState::new(),
                 tunnels: TunnelManager::new(),
+                transfers: TransferManager::new(),
             });
             Ok(())
         })
@@ -874,6 +883,25 @@ pub fn run() {
             tunnel_start,
             tunnel_stop,
             tunnels_list,
+            operator_commands::operator_bootstrap,
+            operator_commands::operator_health_collect,
+            operator_commands::health_history_list,
+            operator_commands::alert_rules_list,
+            operator_commands::alert_rule_save,
+            operator_commands::alert_rule_delete,
+            operator_commands::operator_alerts_list,
+            operator_commands::operator_alert_acknowledge,
+            operator_commands::transfer_start,
+            operator_commands::transfer_cancel,
+            operator_commands::transfer_jobs_list,
+            operator_commands::transfer_chmod,
+            operator_commands::tunnel_policies_list,
+            operator_commands::tunnel_policy_save,
+            operator_commands::tunnels_reconcile,
+            operator_commands::multi_host_run,
+            operator_commands::multi_host_runs_list,
+            operator_commands::workspace_backup_export,
+            operator_commands::workspace_backup_import,
             save_text_file,
         ])
         .run(tauri::generate_context!())
