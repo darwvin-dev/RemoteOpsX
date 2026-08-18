@@ -249,9 +249,10 @@ pub fn record_health(
              )",
             params![server_id, HEALTH_POINTS_PER_SERVER],
         )?;
+        return evaluate_alerts(conn, server_id, snapshot);
     }
 
-    evaluate_alerts(conn, server_id, snapshot)
+    Ok(Vec::new())
 }
 
 pub fn health_history(conn: &Connection, server_id: &str, limit: i64) -> Result<Vec<HealthPoint>> {
@@ -459,11 +460,15 @@ fn evaluate_alerts(
         }
         let needed_previous = rule.consecutive_samples.saturating_sub(1) as usize;
         if needed_previous > 0 {
+            // history[0] is the sample that triggered this evaluation; only prior
+            // persisted 30-second samples count toward the consecutive gate.
+            let available_previous = history.len().saturating_sub(1);
             let all_previous_match = history
                 .iter()
+                .skip(1)
                 .take(needed_previous)
                 .all(|point| matches_threshold(&rule, historical_metric(point, &rule.metric)));
-            if history.len() < needed_previous || !all_previous_match {
+            if available_previous < needed_previous || !all_previous_match {
                 continue;
             }
         }

@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -236,6 +237,7 @@ impl TransferManager {
         let id = uuid::Uuid::new_v4().to_string();
         let mut args = ssh_manager::strict_host_key_args()?;
         args.extend(ssh_manager::jump_host_args(server)?);
+        args.push("-q".into());
         args.extend([
             "-o".into(),
             format!("ControlPath={}", control_path.to_string_lossy()),
@@ -389,9 +391,15 @@ impl TransferManager {
                             job.progress_percent = job.total_bytes.map(|_| 100.0);
                         } else {
                             job.status = "failed".into();
-                            job.error = Some(redaction::redact(format!(
-                                "scp exited with status {status}"
-                            )));
+                            let mut stderr = String::new();
+                            if let Some(mut pipe) = process.child.stderr.take() {
+                                let _ = pipe.read_to_string(&mut stderr);
+                            }
+                            job.error = Some(redaction::redact(if stderr.trim().is_empty() {
+                                format!("scp exited with status {status}")
+                            } else {
+                                stderr.trim().to_string()
+                            }));
                         }
                     }
                     Ok(None) => {}
