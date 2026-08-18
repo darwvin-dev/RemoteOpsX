@@ -57,6 +57,7 @@ jobs:
 
       - name: Release preflight
         run: |
+          bash scripts/security-gates.sh
           npm audit --audit-level=high
           npm test
           npm run build
@@ -124,6 +125,7 @@ jobs:
 
       - name: Release preflight
         run: |
+          bash scripts/security-gates.sh
           npm test
           npm run build
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
