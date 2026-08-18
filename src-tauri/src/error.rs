@@ -82,32 +82,32 @@ mod tests {
 
     #[test]
     fn remote_error_preserves_diagnostic_but_masks_known_secret() {
-        redaction::reset_for_tests();
-        redaction::register_secret("secret-canary-value");
-        let error = DomainError::remote(
-            "Permission denied for secret-canary-value at 10.0.0.1 port 22",
-        );
+        const SECRET: &str = "error-test-remote-secret-canary";
+        redaction::register_secret(SECRET);
+        let error = DomainError::remote(format!(
+            "Permission denied for {SECRET} at 10.0.0.1 port 22"
+        ));
 
         assert_eq!(error.code, "remote.operation_failed");
         assert!(error.retryable);
         assert!(error.message.contains("Permission denied"));
-        assert!(!error.message.contains("secret-canary-value"));
+        assert!(!error.message.contains(SECRET));
         assert!(error.message.contains("••••••"));
         assert!(uuid::Uuid::parse_str(&error.correlation_id).is_ok());
     }
 
     #[test]
     fn internal_error_serialization_never_exposes_diagnostics() {
-        redaction::reset_for_tests();
-        redaction::register_secret("secret-canary-value");
-        let error = DomainError::internal("secret-canary-value");
+        const SECRET: &str = "error-test-internal-secret-canary";
+        redaction::register_secret(SECRET);
+        let error = DomainError::internal(SECRET);
         assert_eq!(error.message, "An unexpected internal error occurred.");
         assert!(!error.retryable);
         assert!(error.context.is_empty());
         assert!(uuid::Uuid::parse_str(&error.correlation_id).is_ok());
 
         let serialized = serde_json::to_string(&error).expect("internal error should serialize");
-        assert!(!serialized.contains("secret-canary-value"));
+        assert!(!serialized.contains(SECRET));
         assert!(serialized.contains("internal.unexpected"));
     }
 }
