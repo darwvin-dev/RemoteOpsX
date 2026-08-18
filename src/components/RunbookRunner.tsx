@@ -17,6 +17,7 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
   const [spec, setSpec] = useState<RunbookSpec | null>(null);
   const [vars, setVars] = useState<Record<string, string>>({});
   const [run, setRun] = useState<RunState | null>(null);
+  const [runOriginIndex, setRunOriginIndex] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const recordedRun = useRef<string | null>(null);
 
@@ -27,6 +28,7 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
       setSpec(loaded);
       setVars(loaded.variables ?? {});
       setRun(null);
+      setRunOriginIndex(0);
     }).catch((error) => pushAlert("error", `load runbook: ${error}`));
     return () => { cancelled = true; };
   }, [pushAlert, runbookId]);
@@ -79,12 +81,27 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
   const completedSteps = steps.filter((step) => ["success", "failure", "skipped"].includes(step.state)).length;
   const progressPct = steps.length ? (completedSteps / steps.length) * 100 : 0;
   const active = run?.phase === "running" || run?.phase === "executing";
+  const firstFailedResult = run?.phase === "complete"
+    ? run.results.findIndex((result) => result.status === "failure")
+    : -1;
+  const retryOriginalIndex = firstFailedResult >= 0 ? runOriginIndex + firstFailedResult : -1;
 
-  function start() {
+  function startFrom(index: number) {
     if (!spec) return;
+    const bounded = Math.max(0, Math.min(index, spec.steps.length - 1));
     recordedRun.current = null;
     setExpanded(new Set());
-    setRun(createRun(spec.steps, vars));
+    setRunOriginIndex(bounded);
+    setRun(createRun(spec.steps.slice(bounded), vars));
+  }
+
+  function start() {
+    startFrom(0);
+  }
+
+  function retryFromFailure() {
+    if (retryOriginalIndex < 0) return;
+    startFrom(retryOriginalIndex);
   }
 
   function toggleExpanded(index: number) {
@@ -103,11 +120,25 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
         <div>
           <h2>{spec.name}</h2>
           <p>{spec.description} · target <span className="mono">{server.name}</span></p>
+          {runOriginIndex > 0 && run ? <small className="muted">Retry run starts at original step {runOriginIndex + 1}.</small> : null}
         </div>
-        <button className="primary" disabled={active} onClick={start}>
-          {active ? "Running…" : run?.phase === "complete" ? "Run again" : "Run runbook"}
-        </button>
+        <div className="flex">
+          {retryOriginalIndex >= 0 && !active ? (
+            <button className="warn" onClick={retryFromFailure}>
+              Retry from step {retryOriginalIndex + 1}
+            </button>
+          ) : null}
+          <button className="primary" disabled={active} onClick={start}>
+            {active ? "Running…" : run?.phase === "complete" ? "Run from start" : "Run runbook"}
+          </button>
+        </div>
       </div>
+
+      {retryOriginalIndex >= 0 && !active ? (
+        <div className="warn-banner">
+          The previous run failed at <strong>{spec.steps[retryOriginalIndex]?.name}</strong>. Retry executes that step and every step after it, preserving the same confirmation gates.
+        </div>
+      ) : null}
 
       <div className="run-progress">
         <div>
@@ -134,11 +165,12 @@ export function RunbookRunner({ runbookId, server }: { runbookId: string; server
       {steps.map((step, index) => {
         const isExpanded = expanded.has(index) || step.state === "running";
         const needsConfirmation = run?.pendingConfirmation === index;
+        const originalIndex = run ? runOriginIndex + index : index;
         return (
-          <div key={`${index}-${step.name}`} className={`step ${step.state}`}>
+          <div key={`${originalIndex}-${step.name}`} className={`step ${step.state}`}>
             <button className="step-head" onClick={() => toggleExpanded(index)}>
               <span className="step-idx">
-                {step.state === "success" ? "✓" : step.state === "failure" ? "✕" : step.state === "skipped" ? "–" : step.state === "running" ? "•" : index + 1}
+                {step.state === "success" ? "✓" : step.state === "failure" ? "✕" : step.state === "skipped" ? "–" : step.state === "running" ? "•" : originalIndex + 1}
               </span>
               <span className="step-name">
                 {step.name}
