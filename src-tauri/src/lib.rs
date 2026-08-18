@@ -208,7 +208,10 @@ fn server_delete(state: State<AppState>, id: String) -> CommandResult<()> {
 // =================== Jump hosts / bastions ===================
 
 #[tauri::command]
-fn jump_host_get(state: State<AppState>, server_id: String) -> CommandResult<Option<JumpHostConfig>> {
+fn jump_host_get(
+    state: State<AppState>,
+    server_id: String,
+) -> CommandResult<Option<JumpHostConfig>> {
     let conn = state.db.lock().unwrap();
     e(jump_host::get(&conn, &server_id))
 }
@@ -351,7 +354,11 @@ fn ssh_host_identity_inspect(
 ) -> CommandResult<host_identity::HostIdentityReport> {
     let server = load_server(&state, &server_id)?;
     if let Some(jump) = jump_host::get_cached(&server_id) {
-        re(host_identity::inspect_via_jump(&server.host, server.port, &jump))
+        re(host_identity::inspect_via_jump(
+            &server.host,
+            server.port,
+            &jump,
+        ))
     } else {
         re(host_identity::inspect(&server.host, server.port))
     }

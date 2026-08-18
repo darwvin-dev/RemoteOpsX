@@ -178,10 +178,7 @@ impl TunnelManager {
                 return Err(anyhow!("SSH tunnel exited during startup with {status}"));
             }
         }
-        self.procs
-            .lock()
-            .unwrap()
-            .insert(tunnel.id.clone(), child);
+        self.procs.lock().unwrap().insert(tunnel.id.clone(), child);
         Ok(())
     }
 
