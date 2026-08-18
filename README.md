@@ -8,7 +8,7 @@ RemoteOpsX combines SSH/SFTP/FTP/RDP/VNC access, agentless server-health monitor
 
 ## Project status
 
-RemoteOpsX is a validated MVP undergoing release verification. The core operator workflows and the P0 implementation for explicit SSH host trust, runtime dependency preflight, restart reconciliation, and known-secret redaction are implemented. The remaining public-release blockers are the live SSH integration fixture, packaged-app E2E/security coverage, signed distribution, and repository-side enforcement of the documented branch-protection policy.
+RemoteOpsX is a validated MVP undergoing release verification. The core operator workflows and the P0 implementation for explicit SSH host trust, runtime dependency preflight, restart reconciliation, known-secret redaction, bastion routing, and the live ephemeral-SSH integration fixture are implemented. Operator depth now includes historical health/alerts, persistent transfer queues, Runbook Studio, tunnel resilience, encrypted workspace backup, guarded multi-host operations, a live operations dashboard, and a universal command palette. The remaining public-release blockers are packaged-app E2E/security coverage, signed distribution, and repository-side enforcement of the documented branch-protection policy.
 
 Current automated checks:
 
@@ -57,6 +57,14 @@ Health collection runs over a separate SSH exec path and does not interfere with
 - **Logs / diagnostic bundles** — remote log and journal collection with local export.
 - **Runbooks** — YAML steps, variables, confirmation boundaries, output capture, and persisted history.
 - **SSH tunnels** — local, remote, and dynamic SOCKS forwards with persisted records and live-process reconciliation.
+- **Bastion routing** — key-auth jump hosts with explicit trust on both hops and shared routing across terminal, exec, health, runbooks, SFTP/SCP and tunnels.
+- **Health history + alerts** — bounded local history, threshold/consecutive/cooldown rules, persisted alert acknowledgement and dashboard rollups.
+- **Persistent transfers** — ControlMaster-backed SFTP/SCP queue with cancellation, recursive transfer, byte progress for single files, chmod and drag/drop.
+- **Runbook Studio** — YAML validation/import/export, variable-aware dry-run preview and retry from the first failed step.
+- **Operator Center + Dashboard** — fleet health, alerts, transfers, multi-host operations, tunnel policies and backup/restore in one local-first workspace.
+- **Multi-host operations** — bounded fan-out with production/destructive safety gates and per-host audit results.
+- **Encrypted workspace backup** — versioned encrypted export/import without keyring secret export; restored password profiles require credential re-entry.
+- **Universal command palette** — fuzzy actions across servers, protocols, health, diagnostics, runbooks, snippets and application workflows.
 - **Startup recovery** — stale sessions/runbooks are marked interrupted and stale persisted tunnel state is reconciled after an unclean restart.
 - **Known-secret redaction** — keyring secrets are centrally registered and masked from buffered remote output, backend errors/logging, runbook results, and exported text; known credentials are rejected from persisted profile metadata, snippets, and runbooks.
 - **Session history** and **command snippets**.
@@ -200,7 +208,6 @@ Current protections:
 
 Remaining release blockers:
 
-- Live ephemeral-SSH integration tests must verify key/password auth, PTY/exec/SCP/tunnel behavior, and host-key mismatch rejection against a real SSH server.
 - Packaged desktop E2E/security tests must cover fresh install, upgrade, keyring/dependency failures, destructive confirmation boundaries, and diagnostic-export leakage.
 - Release artifacts have checksums but are not yet signed/notarized.
 - The repository-side `main` branch protection/ruleset must enforce the required CI checks documented in `.github/BRANCH_PROTECTION.md`.

@@ -30,19 +30,23 @@ Status legend: ✅ done · 🚧 partial · ⬜ planned
 - ⬜ **Signed releases** — code-sign/notarize macOS artifacts and sign Linux release artifacts. Checksums are published, but signatures are still required for a strong distribution trust chain.
 
 ## P1 — operator depth
-- ⬜ **Persistent SFTP subsystem** — replace per-operation `ssh`/`scp`; add progress, cancellation, recursive transfers, chmod and drag/drop.
-- ⬜ **Runbook editor** — validated form/YAML editor, variables, dry-run, import/export and partial retry from a failed step.
-- ⬜ **Tunnel resilience** — health checks, auto-reconnect, autostart-on-connect and explicit failure state.
-- ⬜ **Health history** — bounded per-server time-series retention, custom thresholds and desktop/webhook alert routing.
+- ✅ **Persistent SFTP transfer subsystem** — strict per-server OpenSSH ControlMaster reuse, cancellable background upload/download jobs, recursive transfers, single-file byte progress, chmod and Tauri-native drag/drop queueing.
+- ✅ **Runbook Studio** — bounded YAML import/export, validation, variable rendering, non-executing dry-run preview, destructive/confirmation markers and retry from the first failed step.
+- ✅ **Tunnel resilience** — persisted autostart/auto-reconnect desired-state policies, reconciliation, explicit failed state and explicit Stop precedence.
+- 🚧 **Health history + alerts** — bounded 30-second/7-day per-server history, custom threshold/consecutive/cooldown rules, persisted acknowledgement and dashboard visualization are implemented. Desktop/webhook delivery remains planned.
 - ⬜ **App lock** — optional local lock/master credential with keyring-aware unlock behavior.
-- ⬜ **Import/export** — encrypted, versioned backup/restore of profiles, settings, runbooks and snippets without exporting keyring secrets by default.
+- ✅ **Import/export** — encrypted versioned workspace backup/restore for profiles, settings, runbooks, snippets, bastions, alert rules and tunnels; keyring secrets are never exported and password profiles require credential re-entry.
 - ✅ **Jump hosts / bastion routing** — first-class key-auth bastion configuration with strict app-owned SSH config, explicit bastion fingerprint trust, destination fingerprint inspection through the trusted bastion, and shared routing across terminal/exec/health/runbooks/SCP/tunnels.
+
+## Product experience
+- ✅ **Operations Dashboard** — fleet rollup from persisted health, alerts, tunnel state and recent automation, with direct server/SSH drill-down.
+- ✅ **Universal Command Palette** — fuzzy index across application actions, protocol-specific server actions, health/diagnostics, runbooks and snippets; snippet execution requires a focused target and confirmation.
 
 ## P2 — transport and desktop expansion
 - ⬜ Native SSH transport (for example `russh`/`libssh2`) if it materially improves host-key UX, multiplexing, passphrase prompts and portability over the hardened system-OpenSSH backend.
 - ⬜ Embedded RDP and VNC sessions instead of external viewers.
 - ⬜ Flatpak and additional distro packaging targets after the signed release path is stable.
-- ⬜ Broadcast-to-many commands with strong environment/risk safeguards and per-host result tracking.
+- ✅ Broadcast-to-many commands with a 50-host cap, bounded concurrency, independent production/destructive confirmations, known-secret rejection and persisted per-host result tracking.
 
 ## Quality gates
 - ✅ Frontend regression tests
