@@ -74,7 +74,12 @@ fn jump(f: &Fixture, server_id: &str) -> JumpHostConfig {
 fn trust_direct(host: &str, port: u16) {
     let report = host_identity::inspect(host, port).expect("scan direct host");
     assert_eq!(report.status, "unseen");
-    let fingerprint = report.candidates.first().expect("candidate").fingerprint.clone();
+    let fingerprint = report
+        .candidates
+        .first()
+        .expect("candidate")
+        .fingerprint
+        .clone();
     let trusted = host_identity::trust(host, port, &fingerprint, false).expect("trust direct host");
     assert_eq!(trusted.status, "trusted");
 }
@@ -83,10 +88,17 @@ fn run_pty(server: &Server, jump: Option<&JumpHostConfig>) -> String {
     let (program, args) = ssh_manager::interactive_argv_via(server, jump).expect("pty argv");
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize { rows: 24, cols: 100, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: 24,
+            cols: 100,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .expect("open pty");
     let mut command = CommandBuilder::new(program);
-    for arg in args { command.arg(arg); }
+    for arg in args {
+        command.arg(arg);
+    }
     command.env("TERM", "xterm-256color");
     let mut child = pair.slave.spawn_command(command).expect("spawn ssh pty");
     drop(pair.slave);
@@ -104,8 +116,14 @@ fn run_pty(server: &Server, jump: Option<&JumpHostConfig>) -> String {
     let _ = child.wait().expect("wait pty");
     drop(writer);
     let output = read_thread.join().expect("join reader");
-    assert!(output.contains("__REMOTEOPSX_PTY_OK__"), "PTY output: {output}");
-    assert!(output.contains("/dev/pts/") || output.contains("/dev/tty"), "no remote tty: {output}");
+    assert!(
+        output.contains("__REMOTEOPSX_PTY_OK__"),
+        "PTY output: {output}"
+    );
+    assert!(
+        output.contains("/dev/pts/") || output.contains("/dev/tty"),
+        "no remote tty: {output}"
+    );
     output
 }
 
@@ -128,15 +146,21 @@ fn assert_tunnel(server: &Server, jump: Option<&JumpHostConfig>) {
         status: "pending".into(),
         created_at: String::new(),
     };
-    manager.start_via(server, jump, &tunnel).expect("start tunnel");
+    manager
+        .start_via(server, jump, &tunnel)
+        .expect("start tunnel");
     let mut stream = (0..30)
         .find_map(|_| {
             let result = TcpStream::connect(("127.0.0.1", local_port)).ok();
-            if result.is_none() { thread::sleep(Duration::from_millis(50)); }
+            if result.is_none() {
+                thread::sleep(Duration::from_millis(50));
+            }
             result
         })
         .expect("connect through local tunnel");
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     let mut banner = [0u8; 64];
     let count = stream.read(&mut banner).expect("read ssh banner");
     assert!(String::from_utf8_lossy(&banner[..count]).starts_with("SSH-"));
@@ -178,19 +202,20 @@ fn live_ssh_transport_matrix() {
 
     trust_direct(&f.host, f.target_port);
 
-    let key_exec = ssh_manager::run_remote(&key_server, "printf '__REMOTEOPSX_KEY_OK__'")
-        .expect("key exec");
+    let key_exec =
+        ssh_manager::run_remote(&key_server, "printf '__REMOTEOPSX_KEY_OK__'").expect("key exec");
     assert!(key_exec.success && key_exec.stdout.contains("__REMOTEOPSX_KEY_OK__"));
 
-    let password_exec = ssh_manager::run_remote(&password_server, "printf '__REMOTEOPSX_PASSWORD_OK__'")
-        .expect("password exec");
+    let password_exec =
+        ssh_manager::run_remote(&password_server, "printf '__REMOTEOPSX_PASSWORD_OK__'")
+            .expect("password exec");
     assert!(password_exec.success && password_exec.stdout.contains("__REMOTEOPSX_PASSWORD_OK__"));
     let redacted = ssh_manager::run_remote(&password_server, &format!("printf '{}'", f.password))
         .expect("secret canary exec");
     assert!(!redacted.stdout.contains(&f.password));
     assert!(redacted.stdout.contains("••••••"));
-    let (password_program, password_args) = ssh_manager::interactive_argv_via(&password_server, None)
-        .expect("password argv");
+    let (password_program, password_args) =
+        ssh_manager::interactive_argv_via(&password_server, None).expect("password argv");
     assert_eq!(password_program, "sshpass");
     assert!(password_args.iter().all(|arg| !arg.contains(&f.password)));
 
@@ -203,33 +228,43 @@ fn live_ssh_transport_matrix() {
         .expect("scan target through jump");
     assert_eq!(routed_report.status, "unseen");
     let target_fingerprint = routed_report.candidates[0].fingerprint.clone();
-    let routed_trust = host_identity::trust_via_jump(
-        &f.host,
-        f.target_port,
-        &jump,
-        &target_fingerprint,
-        false,
-    )
-    .expect("trust target through jump");
+    let routed_trust =
+        host_identity::trust_via_jump(&f.host, f.target_port, &jump, &target_fingerprint, false)
+            .expect("trust target through jump");
     assert_eq!(routed_trust.status, "trusted");
 
-    let routed_exec = ssh_manager::run_remote_via(&key_server, Some(&jump), "printf '__REMOTEOPSX_JUMP_OK__'")
-        .expect("jump exec");
+    let routed_exec =
+        ssh_manager::run_remote_via(&key_server, Some(&jump), "printf '__REMOTEOPSX_JUMP_OK__'")
+            .expect("jump exec");
     assert!(routed_exec.success && routed_exec.stdout.contains("__REMOTEOPSX_JUMP_OK__"));
     run_pty(&key_server, Some(&jump));
 
     let remote_dir = format!("/tmp/remoteopsx-ci-{}", uuid::Uuid::new_v4());
-    assert!(ssh_manager::run_remote_via(&key_server, Some(&jump), &format!("mkdir -p '{remote_dir}'"))
-        .expect("mkdir remote").success);
+    assert!(
+        ssh_manager::run_remote_via(
+            &key_server,
+            Some(&jump),
+            &format!("mkdir -p '{remote_dir}'")
+        )
+        .expect("mkdir remote")
+        .success
+    );
     let local_source = f.temp.join("upload-source.txt");
     let local_download = f.temp.join("download-copy.txt");
     fs::write(&local_source, b"remoteopsx-scp-payload").unwrap();
-    sftp_manager::upload_via(&key_server, Some(&jump), local_source.to_str().unwrap(), &remote_dir)
-        .expect("scp upload through jump");
+    sftp_manager::upload_via(
+        &key_server,
+        Some(&jump),
+        local_source.to_str().unwrap(),
+        &remote_dir,
+    )
+    .expect("scp upload through jump");
     let remote_file = format!("{remote_dir}/upload-source.txt");
     let listing = sftp_manager::list_dir_via(&key_server, Some(&jump), &remote_dir)
         .expect("list through jump");
-    assert!(listing.iter().any(|entry| entry.name == "upload-source.txt"));
+    assert!(listing
+        .iter()
+        .any(|entry| entry.name == "upload-source.txt"));
     sftp_manager::download_via(
         &key_server,
         Some(&jump),
@@ -237,7 +272,10 @@ fn live_ssh_transport_matrix() {
         local_download.to_str().unwrap(),
     )
     .expect("scp download through jump");
-    assert_eq!(fs::read(&local_download).unwrap(), b"remoteopsx-scp-payload");
+    assert_eq!(
+        fs::read(&local_download).unwrap(),
+        b"remoteopsx-scp-payload"
+    );
     sftp_manager::rename_via(
         &key_server,
         Some(&jump),
@@ -256,18 +294,18 @@ fn live_ssh_transport_matrix() {
     let blocked = ssh_manager::run_remote_via(&key_server, Some(&jump), "true")
         .expect("ssh process should report host-key failure");
     assert!(!blocked.success);
-    assert!(blocked.stderr.to_lowercase().contains("host key") || blocked.stderr.to_lowercase().contains("identification"));
+    assert!(
+        blocked.stderr.to_lowercase().contains("host key")
+            || blocked.stderr.to_lowercase().contains("identification")
+    );
 
     let replacement = changed.candidates[0].fingerprint.clone();
-    let restored = host_identity::trust_via_jump(
-        &f.host,
-        f.target_port,
-        &jump,
-        &replacement,
-        true,
-    )
-    .expect("explicitly replace changed target identity");
+    let restored = host_identity::trust_via_jump(&f.host, f.target_port, &jump, &replacement, true)
+        .expect("explicitly replace changed target identity");
     assert_eq!(restored.status, "trusted");
-    assert!(ssh_manager::run_remote_via(&key_server, Some(&jump), "printf '__REMOTEOPSX_RESTORED__'")
-        .expect("exec after replace").success);
+    assert!(
+        ssh_manager::run_remote_via(&key_server, Some(&jump), "printf '__REMOTEOPSX_RESTORED__'")
+            .expect("exec after replace")
+            .success
+    );
 }
