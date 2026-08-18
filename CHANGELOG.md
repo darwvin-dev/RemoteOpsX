@@ -8,15 +8,17 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 
 ### Security
 - SSH first contact now uses an app-managed `known_hosts` store with SHA-256 fingerprint preview and explicit Trust / Replace / Remove actions; terminal, one-shot exec, SCP, and tunnels all require strict host-key verification.
+- SSH trust is isolated from system-wide known-host files, configured known-host helpers, DNS SSHFP auto-trust, automatic host-key updates, and localhost host-auth bypasses so the app review flow is the authoritative trust source.
+- Saved host syntax is restricted to safe DNS/IP forms before it can be represented in `known_hosts`, preventing wildcard/list/marker injection through profile values.
 - One-shot remote commands are delivered through SSH stdin so command text is not exposed in the local process argv.
 - Runtime preflight checks core OpenSSH tooling plus profile-specific password, FTP, RDP, VNC, and keyring readiness.
-- Known keyring secrets are registered in a central redaction layer and masked from buffered SSH output, IPC errors, runbook results, backend diagnostics, and exported text; profile metadata, user runbooks, and snippets reject known stored credentials before SQLite persistence.
+- Known keyring secrets are registered in a central redaction layer and masked from buffered SSH output, IPC errors, every textual runbook result field, backend diagnostics, and exported text; profile metadata, user runbooks, snippets, and persisted tunnel endpoint text reject known stored credentials before SQLite persistence.
 - Existing saved credentials are preloaded from keyring references during startup on a best-effort basis, so redaction and persistence guards are active before the first connection attempt.
-- CI now contains source-level regression gates that reject weakened SSH/RDP trust and password-in-argv patterns.
+- CI and tagged-release preflight contain source-level regression gates that reject weakened SSH/RDP trust and password-in-argv patterns.
 
 ### Reliability
 - Startup recovery marks stale sessions and runbook executions interrupted and stale persisted tunnel state stopped after an unclean restart.
-- Managed SSH tunnel child processes are killed and reaped on graceful manager teardown.
+- SSH terminal exit closes the persisted session immediately; PTY and tunnel child processes are killed and reaped deterministically instead of lingering until process exit.
 
 ### Changed
 - Release tooling treats `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` as one versioned product.
