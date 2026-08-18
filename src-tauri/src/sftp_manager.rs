@@ -67,10 +67,7 @@ fn parse_ls_line(line: &str) -> Option<RemoteFile> {
     })
 }
 
-fn scp_base_via(
-    server: &Server,
-    jump: Option<&JumpHostConfig>,
-) -> Result<(String, Vec<String>)> {
+fn scp_base_via(server: &Server, jump: Option<&JumpHostConfig>) -> Result<(String, Vec<String>)> {
     let mut args = ssh_manager::strict_host_key_args()?;
     args.extend(ssh_manager::jump_host_args_via(jump)?);
     args.extend(["-P".to_string(), server.port.to_string()]);
@@ -109,14 +106,20 @@ pub fn upload_via(
 ) -> Result<()> {
     let (program, mut args) = scp_base_via(server, jump)?;
     args.push(local_path.to_string());
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_dir));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_dir
+    ));
     run_transfer(server, &program, &args)
 }
 
 pub fn upload(server: &Server, local_path: &str, remote_dir: &str) -> Result<()> {
     let (program, mut args) = scp_base(server)?;
     args.push(local_path.to_string());
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_dir));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_dir
+    ));
     run_transfer(server, &program, &args)
 }
 
@@ -127,29 +130,35 @@ pub fn download_via(
     local_path: &str,
 ) -> Result<()> {
     let (program, mut args) = scp_base_via(server, jump)?;
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_path));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_path
+    ));
     args.push(local_path.to_string());
     run_transfer(server, &program, &args)
 }
 
 pub fn download(server: &Server, remote_path: &str, local_path: &str) -> Result<()> {
     let (program, mut args) = scp_base(server)?;
-    args.push(format!("{}@{}:{}", server.username, server.host, remote_path));
+    args.push(format!(
+        "{}@{}:{}",
+        server.username, server.host, remote_path
+    ));
     args.push(local_path.to_string());
     run_transfer(server, &program, &args)
 }
 
-pub fn delete_via(
-    server: &Server,
-    jump: Option<&JumpHostConfig>,
-    remote_path: &str,
-) -> Result<()> {
+pub fn delete_via(server: &Server, jump: Option<&JumpHostConfig>, remote_path: &str) -> Result<()> {
     let out = ssh_manager::run_remote_via(
         server,
         jump,
         &format!("rm -rf {}", shell_quote(remote_path)),
     )?;
-    if out.success { Ok(()) } else { Err(anyhow!(out.stderr)) }
+    if out.success {
+        Ok(())
+    } else {
+        Err(anyhow!(out.stderr))
+    }
 }
 
 pub fn delete(server: &Server, remote_path: &str) -> Result<()> {
@@ -168,7 +177,11 @@ pub fn rename_via(
         jump,
         &format!("mv {} {}", shell_quote(from), shell_quote(to)),
     )?;
-    if out.success { Ok(()) } else { Err(anyhow!(out.stderr)) }
+    if out.success {
+        Ok(())
+    } else {
+        Err(anyhow!(out.stderr))
+    }
 }
 
 pub fn rename(server: &Server, from: &str, to: &str) -> Result<()> {
@@ -186,7 +199,9 @@ fn run_transfer(server: &Server, program: &str, args: &[String]) -> Result<()> {
     if out.status.success() {
         Ok(())
     } else {
-        Err(anyhow!(redaction::redact(String::from_utf8_lossy(&out.stderr))))
+        Err(anyhow!(redaction::redact(String::from_utf8_lossy(
+            &out.stderr
+        ))))
     }
 }
 
@@ -200,17 +215,29 @@ mod tests {
 
     fn server(auth_type: &str, key_path: Option<&str>) -> Server {
         Server {
-            id: "s1".into(), name: "test".into(), host: "example.com".into(), port: 22,
-            ftp_port: None, rdp_port: None, vnc_port: None, username: "root".into(),
-            protocols: vec!["sftp".into()], auth_type: auth_type.into(),
-            private_key_path: key_path.map(|value| value.to_string()), tags: vec![],
-            group_name: None, environment: "dev".into(), notes: None,
-            created_at: String::new(), updated_at: String::new(),
+            id: "s1".into(),
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            ftp_port: None,
+            rdp_port: None,
+            vnc_port: None,
+            username: "root".into(),
+            protocols: vec!["sftp".into()],
+            auth_type: auth_type.into(),
+            private_key_path: key_path.map(|value| value.to_string()),
+            tags: vec![],
+            group_name: None,
+            environment: "dev".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
         }
     }
 
     fn has_opt(args: &[String], value: &str) -> bool {
-        args.windows(2).any(|window| window[0] == "-o" && window[1] == value)
+        args.windows(2)
+            .any(|window| window[0] == "-o" && window[1] == value)
     }
 
     #[test]
@@ -218,7 +245,8 @@ mod tests {
         let mut args = Vec::new();
         let server = server("password", None);
         if server.auth_type == "password" {
-            args.push("-o".into()); args.push("PubkeyAuthentication=no".into());
+            args.push("-o".into());
+            args.push("PubkeyAuthentication=no".into());
         }
         assert!(has_opt(&args, "PubkeyAuthentication=no"));
     }
@@ -228,7 +256,12 @@ mod tests {
         let server = server("key", Some("/home/user/.ssh/id_ed25519"));
         let mut args = Vec::new();
         if let Some(key) = &server.private_key_path {
-            args.extend(["-i".into(), key.clone(), "-o".into(), "IdentitiesOnly=yes".into()]);
+            args.extend([
+                "-i".into(),
+                key.clone(),
+                "-o".into(),
+                "IdentitiesOnly=yes".into(),
+            ]);
         }
         assert!(args.iter().any(|arg| arg == "/home/user/.ssh/id_ed25519"));
         assert!(has_opt(&args, "IdentitiesOnly=yes"));
@@ -238,13 +271,17 @@ mod tests {
     fn parses_padded_ls_rows_and_filenames_with_spaces() {
         let line = "-rw-r--r--  1 root root 42 1710000000 release notes.txt";
         let file = parse_ls_line(line).unwrap();
-        assert_eq!(file.size, 42); assert_eq!(file.name, "release notes.txt"); assert!(!file.is_dir);
+        assert_eq!(file.size, 42);
+        assert_eq!(file.name, "release notes.txt");
+        assert!(!file.is_dir);
     }
 
     #[test]
     fn parses_directories_and_strips_symlink_targets() {
         let directory = parse_ls_line("drwxr-xr-x  2 root root 4096 1710000000 releases").unwrap();
-        let symlink = parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
-        assert!(directory.is_dir); assert_eq!(symlink.name, "current");
+        let symlink =
+            parse_ls_line("lrwxrwxrwx 1 root root 12 1710000000 current -> releases/v2").unwrap();
+        assert!(directory.is_dir);
+        assert_eq!(symlink.name, "current");
     }
 }
