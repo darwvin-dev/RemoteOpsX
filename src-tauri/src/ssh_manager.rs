@@ -149,8 +149,6 @@ pub fn run_remote(server: &Server, remote_command: &str) -> Result<CommandOutput
             stdin.write_all(b"\n")?;
         }
     }
-    // Close stdin so the remote login shell receives EOF and exits after the
-    // command. Keeping the pipe open would leave one-shot calls hanging.
     drop(child.stdin.take());
 
     let output = child
@@ -215,19 +213,17 @@ mod tests {
 
     #[test]
     fn one_shot_argv_never_needs_remote_command_text() {
-        // The command is intentionally absent from exec_argv's API. This
-        // regression guard documents the process-list security boundary.
         let signature: fn(&Server) -> Result<(String, Vec<String>)> = exec_argv;
         let _ = signature;
     }
 
     #[test]
     fn captured_output_uses_the_central_redactor() {
-        redaction::reset_for_tests();
-        redaction::register_secret("abcdef-secret");
+        const SECRET: &str = "ssh-manager-test-secret-canary";
+        redaction::register_secret(SECRET);
         let output = redaction::redact_command_output(CommandOutput {
-            stdout: "token abcdef-secret token".into(),
-            stderr: "abcdef-secret".into(),
+            stdout: format!("token {SECRET} token"),
+            stderr: SECRET.into(),
             exit_code: 0,
             success: true,
         });
