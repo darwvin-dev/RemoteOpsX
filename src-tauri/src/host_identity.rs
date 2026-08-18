@@ -52,7 +52,7 @@ pub fn init(path: PathBuf) -> Result<()> {
     }
 
     KNOWN_HOSTS_PATH
-        .set(path.clone())
+        .set(path)
         .map_err(|_| anyhow!("RemoteOpsX known_hosts path was already initialized"))?;
     Ok(())
 }
@@ -64,14 +64,17 @@ pub fn known_hosts_path() -> Result<PathBuf> {
         .ok_or_else(|| anyhow!("RemoteOpsX known_hosts manager is not initialized"))
 }
 
-pub fn strict_ssh_options() -> Result<Vec<String>> {
-    let path = known_hosts_path()?;
-    Ok(vec![
+fn strict_options_for_path(path: &Path) -> Vec<String> {
+    vec![
         "-o".into(),
         format!("UserKnownHostsFile={}", path.to_string_lossy()),
         "-o".into(),
         "StrictHostKeyChecking=yes".into(),
-    ])
+    ]
+}
+
+pub fn strict_ssh_options() -> Result<Vec<String>> {
+    Ok(strict_options_for_path(&known_hosts_path()?))
 }
 
 pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
@@ -88,12 +91,15 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
     let candidates = fingerprints(&scanned)?;
     let trusted_lines = trusted_lines(host, port)?;
     let trusted = fingerprints(&trusted_lines)?;
-    let candidate_fps: Vec<&str> = candidates.iter().map(|value| value.fingerprint.as_str()).collect();
+    let candidate_fingerprints: Vec<&str> = candidates
+        .iter()
+        .map(|value| value.fingerprint.as_str())
+        .collect();
     let status = if trusted.is_empty() {
         "unseen"
     } else if trusted
         .iter()
-        .any(|value| candidate_fps.contains(&value.fingerprint.as_str()))
+        .any(|value| candidate_fingerprints.contains(&value.fingerprint.as_str()))
     {
         "trusted"
     } else {
@@ -105,11 +111,19 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
         port,
         status: status.to_string(),
         candidates,
-        trusted_fingerprints: trusted.into_iter().map(|value| value.fingerprint).collect(),
+        trusted_fingerprints: trusted
+            .into_iter()
+            .map(|value| value.fingerprint)
+            .collect(),
     })
 }
 
-pub fn trust(host: &str, port: u16, expected_fingerprint: &str, replace: bool) -> Result<HostIdentityReport> {
+pub fn trust(
+    host: &str,
+    port: u16,
+    expected_fingerprint: &str,
+    replace: bool,
+) -> Result<HostIdentityReport> {
     validate_target(host, port)?;
     let before = inspect(host, port)?;
 
@@ -118,11 +132,13 @@ pub fn trust(host: &str, port: u16, expected_fingerprint: &str, replace: bool) -
         "changed" if !replace => {
             return Err(anyhow!(
                 "The stored SSH identity does not match the scanned host. Verify the new fingerprint out-of-band, then use Replace explicitly."
-            ))
+            ));
         }
         _ => {}
     }
 
+    // Re-scan immediately before persistence so a fingerprint that disappeared
+    // between preview and Trust/Replace cannot be written accidentally.
     let scanned = scan_lines(host, port)?;
     let scanned_with_fingerprints = scanned
         .iter()
@@ -131,7 +147,11 @@ pub fn trust(host: &str, port: u16, expected_fingerprint: &str, replace: bool) -
     let selected = scanned_with_fingerprints
         .iter()
         .find(|(_, candidate)| candidate.fingerprint == expected_fingerprint)
-        .ok_or_else(|| anyhow!("The expected fingerprint is no longer offered by the server. Scan again before trusting."))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "The expected fingerprint is no longer offered by the server. Scan again before trusting."
+            )
+        })?;
 
     if replace || before.status == "unseen" {
         remove(host, port)?;
@@ -156,7 +176,14 @@ pub fn remove(host: &str, port: u16) -> Result<()> {
         .collect::<Vec<_>>()
         .join("\n");
     let tmp = path.with_extension("known_hosts.tmp");
-    fs::write(&tmp, if retained.is_empty() { String::new() } else { format!("{retained}\n") })?;
+    fs::write(
+        &tmp,
+        if retained.is_empty() {
+            String::new()
+        } else {
+            format!("{retained}\n")
+        },
+    )?;
 
     #[cfg(unix)]
     {
@@ -171,7 +198,10 @@ pub fn remove(host: &str, port: u16) -> Result<()> {
 }
 
 fn validate_target(host: &str, port: u16) -> Result<()> {
-    if host.trim().is_empty() || host.chars().any(char::is_whitespace) || host.chars().any(char::is_control) {
+    if host.trim().is_empty()
+        || host.chars().any(char::is_whitespace)
+        || host.chars().any(char::is_control)
+    {
         return Err(anyhow!("invalid SSH host name"));
     }
     if port == 0 {
@@ -199,14 +229,22 @@ fn normalize_scanned_line(line: &str, host: &str, port: u16) -> Option<String> {
     let _reported_host = columns.next()?;
     let key_type = columns.next()?;
     let key = columns.next()?;
-    Some(format!("{} {} {}", known_hosts_target(host, port), key_type, key))
+    Some(format!(
+        "{} {} {}",
+        known_hosts_target(host, port),
+        key_type,
+        key
+    ))
 }
 
 fn scan_lines(host: &str, port: u16) -> Result<Vec<String>> {
+    let port_string = port.to_string();
     let output = Command::new("ssh-keyscan")
-        .args(["-T", "5", "-p", &port.to_string(), "--", host])
+        .args(["-T", "5", "-p", port_string.as_str(), "--", host])
         .output()
-        .map_err(|error| anyhow!("failed to run ssh-keyscan: {error}. Install OpenSSH client tools."))?;
+        .map_err(|error| {
+            anyhow!("failed to run ssh-keyscan: {error}. Install OpenSSH client tools.")
+        })?;
     if !output.status.success() && output.stdout.is_empty() {
         return Err(anyhow!(
             "ssh-keyscan failed for {host}:{port}: {}",
@@ -246,11 +284,19 @@ fn fingerprint(line: &str) -> Result<HostKeyCandidate> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| anyhow!("failed to run ssh-keygen: {error}. Install OpenSSH client tools."))?;
-    child.stdin.as_mut().context("failed to open ssh-keygen stdin")?.write_all(format!("{line}\n").as_bytes())?;
+        .map_err(|error| {
+            anyhow!("failed to run ssh-keygen: {error}. Install OpenSSH client tools.")
+        })?;
+    child
+        .stdin
+        .as_mut()
+        .context("failed to open ssh-keygen stdin")?
+        .write_all(format!("{line}\n").as_bytes())?;
     let output = child.wait_with_output()?;
     if !output.status.success() {
-        return Err(anyhow!("ssh-keygen could not fingerprint the scanned host key"));
+        return Err(anyhow!(
+            "ssh-keygen could not fingerprint the scanned host key"
+        ));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let fingerprint = stdout
@@ -258,7 +304,10 @@ fn fingerprint(line: &str) -> Result<HostKeyCandidate> {
         .nth(1)
         .ok_or_else(|| anyhow!("ssh-keygen returned an unexpected fingerprint format"))?
         .to_string();
-    Ok(HostKeyCandidate { key_type, fingerprint })
+    Ok(HostKeyCandidate {
+        key_type,
+        fingerprint,
+    })
 }
 
 #[cfg(test)]
@@ -266,15 +315,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn strict_transport_options_require_explicit_trust() {
+        let args = strict_options_for_path(Path::new("/tmp/remoteopsx-known-hosts"));
+        assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=yes"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "UserKnownHostsFile=/tmp/remoteopsx-known-hosts"));
+        assert!(!args.iter().any(|arg| arg.contains("accept-new")));
+        assert!(!args.iter().any(|arg| arg == "StrictHostKeyChecking=no"));
+    }
+
+    #[test]
     fn normalizes_default_and_nonstandard_port_targets() {
         assert_eq!(known_hosts_target("example.com", 22), "example.com");
-        assert_eq!(known_hosts_target("example.com", 2222), "[example.com]:2222");
+        assert_eq!(
+            known_hosts_target("example.com", 2222),
+            "[example.com]:2222"
+        );
     }
 
     #[test]
     fn target_matching_does_not_remove_neighboring_hosts() {
-        assert!(line_matches_target("example.com ssh-ed25519 AAAA", "example.com"));
-        assert!(!line_matches_target("example.com.evil ssh-ed25519 AAAA", "example.com"));
+        assert!(line_matches_target(
+            "example.com ssh-ed25519 AAAA",
+            "example.com"
+        ));
+        assert!(!line_matches_target(
+            "example.com.evil ssh-ed25519 AAAA",
+            "example.com"
+        ));
     }
 
     #[test]
