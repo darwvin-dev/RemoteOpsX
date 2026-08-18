@@ -137,7 +137,10 @@ export function DiagnosticsPanel({ server }: { server: Server }) {
   }
 
   const relevantOptionalIds = new Set<string>();
-  if (server.auth_type === "password") relevantOptionalIds.add("sshpass");
+  if (server.auth_type === "password") {
+    relevantOptionalIds.add("sshpass");
+    relevantOptionalIds.add("keyring");
+  }
   if (server.protocols.includes("ftp")) relevantOptionalIds.add("curl");
   if (server.protocols.includes("rdp")) relevantOptionalIds.add("freerdp");
   if (server.protocols.includes("vnc")) relevantOptionalIds.add("vnc");
