@@ -319,7 +319,10 @@ mod tests {
                 terminal_font_size: value,
                 ..AppSettings::default()
             };
-            assert_eq!(field(&settings.validate().unwrap_err()), Some("terminal_font_size"));
+            assert_eq!(
+                field(&settings.validate().unwrap_err()),
+                Some("terminal_font_size")
+            );
         }
         for value in [99, 201] {
             let settings = AppSettings {
