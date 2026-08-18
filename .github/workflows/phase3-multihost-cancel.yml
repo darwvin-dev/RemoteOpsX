@@ -1,0 +1,138 @@
+name: Phase3 Multi-host Cancellation
+
+on:
+  push:
+    branches: [agent/operator-experience]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - name: Add cooperative cancellation registry
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src-tauri/src/multi_host.rs')
+          s = p.read_text()
+          s = s.replace(
+              'use std::thread;\n',
+              'use std::collections::HashMap;\nuse std::sync::atomic::{AtomicBool, Ordering};\nuse std::sync::{Arc, Mutex};\nuse std::thread;\n\nuse once_cell::sync::Lazy;\n'
+          )
+          if 'static CANCELLATIONS' not in s:
+              s = s.replace(
+                  'const MAX_COMMAND_BYTES: usize = 16 * 1024;\n',
+                  'const MAX_COMMAND_BYTES: usize = 16 * 1024;\n\nstatic CANCELLATIONS: Lazy<Mutex<HashMap<String, Arc<AtomicBool>>>> =\n    Lazy::new(|| Mutex::new(HashMap::new()));\n'
+              )
+          s = s.replace(
+              'pub struct MultiHostRequest {\n    pub server_ids: Vec<String>,',
+              'pub struct MultiHostRequest {\n    pub run_id: Option<String>,\n    pub server_ids: Vec<String>,'
+          )
+          validation_marker = '''    if request.server_ids.is_empty() || servers.is_empty() {\n        return Err(anyhow!("select at least one server"));\n    }\n'''
+          validation_add = validation_marker + '''    if let Some(run_id) = request.run_id.as_deref() {\n        let valid = !run_id.is_empty()\n            && run_id.len() <= 64\n            && run_id\n                .chars()\n                .all(|character| character.is_ascii_alphanumeric() || character == '-');\n        if !valid {\n            return Err(anyhow!("run_id must be a UUID-like identifier up to 64 characters"));\n        }\n    }\n'''
+          if 'run_id must be a UUID-like identifier' not in s:
+              if validation_marker not in s:
+                  raise SystemExit('multi-host validation marker missing')
+              s = s.replace(validation_marker, validation_add, 1)
+          if 'pub fn request_cancel' not in s:
+              marker = 'fn failed_output(message: impl ToString) -> CommandOutput {'
+              functions = '''pub fn request_cancel(run_id: &str) -> bool {\n    CANCELLATIONS\n        .lock()\n        .ok()\n        .and_then(|registry| registry.get(run_id).cloned())\n        .map(|flag| {\n            flag.store(true, Ordering::SeqCst);\n            true\n        })\n        .unwrap_or(false)\n}\n\n'''
+              s = s.replace(marker, functions + marker)
+
+          old_start = '''pub fn execute(request: &MultiHostRequest, servers: Vec<Server>) -> Result<MultiHostRun> {\n    validate(request, &servers)?;\n    let started_at = Utc::now().to_rfc3339();\n    let mut results = Vec::with_capacity(servers.len());\n\n    for batch in servers.chunks(request.concurrency) {'''
+          new_start = '''pub fn execute(request: &MultiHostRequest, servers: Vec<Server>) -> Result<MultiHostRun> {\n    validate(request, &servers)?;\n    let run_id = request\n        .run_id\n        .clone()\n        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());\n    let cancellation = Arc::new(AtomicBool::new(false));\n    CANCELLATIONS\n        .lock()\n        .map_err(|_| anyhow!("multi-host cancellation registry lock poisoned"))?\n        .insert(run_id.clone(), cancellation.clone());\n    let started_at = Utc::now().to_rfc3339();\n    let mut results = Vec::with_capacity(servers.len());\n\n    for batch in servers.chunks(request.concurrency) {\n        if cancellation.load(Ordering::SeqCst) {\n            break;\n        }'''
+          if old_start not in s:
+              raise SystemExit('multi-host execute start marker missing')
+          s = s.replace(old_start, new_start, 1)
+          old_status = '''    let successes = results.iter().filter(|result| result.output.success).count();\n    let status = if successes == results.len() {\n        "success"\n    } else if successes == 0 {\n        "failed"\n    } else {\n        "partial"\n    };\n    Ok(MultiHostRun {\n        id: uuid::Uuid::new_v4().to_string(),'''
+          new_status = '''    let cancelled = cancellation.load(Ordering::SeqCst);\n    if let Ok(mut registry) = CANCELLATIONS.lock() {\n        registry.remove(&run_id);\n    }\n    let successes = results.iter().filter(|result| result.output.success).count();\n    let status = if cancelled {\n        "cancelled"\n    } else if successes == results.len() {\n        "success"\n    } else if successes == 0 {\n        "failed"\n    } else {\n        "partial"\n    };\n    Ok(MultiHostRun {\n        id: run_id,'''
+          if old_status not in s:
+              raise SystemExit('multi-host status marker missing')
+          s = s.replace(old_status, new_status, 1)
+          # Test request literals need run_id.
+          s = s.replace(
+              '        let mut request = MultiHostRequest {\n            server_ids:',
+              '        let mut request = MultiHostRequest {\n            run_id: None,\n            server_ids:'
+          )
+          p.write_text(s)
+
+          p = Path('src-tauri/src/operator_commands.rs')
+          s = p.read_text()
+          old = '''#[tauri::command]\npub fn multi_host_run(\n    state: State<AppState>,\n    request: MultiHostRequest,\n) -> CommandResult<MultiHostRun> {'''
+          new = '''#[tauri::command]\npub async fn multi_host_run(\n    state: State<'_, AppState>,\n    request: MultiHostRequest,\n) -> CommandResult<MultiHostRun> {'''
+          if old not in s:
+              raise SystemExit('multi_host_run command marker missing')
+          s = s.replace(old, new, 1)
+          old_exec = '''    let run = remote(multi_host::execute(&request, servers))?;\n    {\n        let conn = state.db.lock().unwrap();\n        internal(operator_data::save_multi_host_run(&conn, &run))?;\n    }\n    Ok(run)\n}\n'''
+          new_exec = '''    let run = tauri::async_runtime::spawn_blocking(move || multi_host::execute(&request, servers))\n        .await\n        .map_err(|error| DomainError::internal(format!("multi-host worker failed: {error}")))?\n        .map_err(|error| DomainError::remote(error.to_string()))?;\n    {\n        let conn = state.db.lock().unwrap();\n        internal(operator_data::save_multi_host_run(&conn, &run))?;\n    }\n    Ok(run)\n}\n\n#[tauri::command]\npub fn multi_host_cancel(run_id: String) -> CommandResult<()> {\n    if multi_host::request_cancel(&run_id) {\n        Ok(())\n    } else {\n        Err(DomainError::validation(\n            "run_id",\n            "multi-host run is not active or already completed",\n        ))\n    }\n}\n'''
+          if old_exec not in s:
+              raise SystemExit('multi-host execute command marker missing')
+          s = s.replace(old_exec, new_exec, 1)
+          p.write_text(s)
+
+          p = Path('src-tauri/src/lib.rs')
+          s = p.read_text()
+          marker = '            operator_commands::multi_host_run,\n'
+          if 'operator_commands::multi_host_cancel' not in s:
+              if marker not in s:
+                  raise SystemExit('lib multi-host command marker missing')
+              s = s.replace(marker, marker + '            operator_commands::multi_host_cancel,\n')
+          p.write_text(s)
+
+          p = Path('src/operatorTypes.ts')
+          s = p.read_text()
+          s = s.replace(
+              'export interface MultiHostRequest {\n  server_ids: string[];',
+              'export interface MultiHostRequest {\n  run_id?: string | null;\n  server_ids: string[];'
+          )
+          p.write_text(s)
+
+          p = Path('src/operatorApi.ts')
+          s = p.read_text()
+          marker = '''export const multiHostRun = (request: MultiHostRequest) =>\n  invoke<MultiHostRun>("multi_host_run", { request });\n'''
+          addition = marker + '''export const multiHostCancel = (runId: string) =>\n  invoke<void>("multi_host_cancel", { runId });\n'''
+          if 'multiHostCancel' not in s:
+              if marker not in s:
+                  raise SystemExit('operatorApi multiHostRun marker missing')
+              s = s.replace(marker, addition)
+          p.write_text(s)
+
+          p = Path('src/components/OperatorCenter.tsx')
+          s = p.read_text()
+          if 'const [runningId' not in s:
+              s = s.replace(
+                  '  const [run, setRun] = useState<MultiHostRun | null>(null);',
+                  '  const [run, setRun] = useState<MultiHostRun | null>(null);\n  const [runningId, setRunningId] = useState<string | null>(null);\n  const [cancelRequested, setCancelRequested] = useState(false);'
+              )
+          old_execute = '''  async function execute() {\n    try {\n      setRun(await operatorApi.multiHostRun({\n        server_ids: selected,\n        command,\n        concurrency,\n        production_confirmed: productionConfirmed,\n        destructive_confirmed: destructiveConfirmed,\n      }));\n    } catch (reason) { reportError(reason); }\n  }'''
+          new_execute = '''  async function execute() {\n    const runId = crypto.randomUUID();\n    setRunningId(runId);\n    setCancelRequested(false);\n    setRun(null);\n    try {\n      setRun(await operatorApi.multiHostRun({\n        run_id: runId,\n        server_ids: selected,\n        command,\n        concurrency,\n        production_confirmed: productionConfirmed,\n        destructive_confirmed: destructiveConfirmed,\n      }));\n    } catch (reason) {\n      reportError(reason);\n    } finally {\n      setRunningId(null);\n      setCancelRequested(false);\n    }\n  }\n\n  async function cancelRun() {\n    if (!runningId) return;\n    setCancelRequested(true);\n    try {\n      await operatorApi.multiHostCancel(runningId);\n    } catch (reason) {\n      reportError(reason);\n      setCancelRequested(false);\n    }\n  }'''
+          if old_execute not in s:
+              raise SystemExit('OperatorCenter multi-host execute marker missing')
+          s = s.replace(old_execute, new_execute, 1)
+          old_button = '<button className="primary" disabled={!selected.length || !command.trim()} onClick={() => void execute()}>Run on {selected.length} host{selected.length === 1 ? "" : "s"}</button>'
+          new_button = '''<div className="flex">\n        <button className="primary" disabled={Boolean(runningId) || !selected.length || !command.trim()} onClick={() => void execute()}>\n          {runningId ? "Running…" : `Run on ${selected.length} host${selected.length === 1 ? "" : "s"}`}\n        </button>\n        {runningId ? <button className="warn" disabled={cancelRequested} onClick={() => void cancelRun()}>{cancelRequested ? "Cancellation requested…" : "Cancel remaining batches"}</button> : null}\n      </div>\n      {runningId ? <div className="panel-hint">Cancellation stops new batches; SSH commands already in flight are allowed to finish and are still audited.</div> : null}'''
+          if old_button not in s:
+              raise SystemExit('OperatorCenter multi-host button marker missing')
+          s = s.replace(old_button, new_button, 1)
+          p.write_text(s)
+          PY
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+      - name: Remove helper and commit
+        run: |
+          git rm .github/workflows/phase3-multihost-cancel.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src-tauri/src src/operatorTypes.ts src/operatorApi.ts src/components/OperatorCenter.tsx
+          git commit -m 'feat: add cancellable multi-host batches'
+          git push origin HEAD:agent/operator-experience
