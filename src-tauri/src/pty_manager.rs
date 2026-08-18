@@ -87,14 +87,12 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// One live PTY-backed SSH session.
 struct PtySession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
 }
 
-/// Registry of all live terminal sessions, keyed by a UI-supplied id.
 #[derive(Default)]
 pub struct PtyManager {
     sessions: Mutex<HashMap<String, PtySession>>,
@@ -105,8 +103,6 @@ impl PtyManager {
         Self::default()
     }
 
-    /// Spawn an interactive ssh session inside a PTY. `id` is chosen by the
-    /// frontend (one per terminal tab). Output is streamed via events.
     pub fn spawn(
         &self,
         app: AppHandle,
@@ -126,12 +122,13 @@ impl PtyManager {
         })?;
 
         let mut cmd = CommandBuilder::new(&program);
-        for a in &args {
-            cmd.arg(a);
+        for arg in &args {
+            cmd.arg(arg);
         }
-        // A sane TERM so curses apps (htop, vim) render.
         cmd.env("TERM", "xterm-256color");
-        // Feed the password to sshpass -e via the environment, never argv.
+
+        // Feed the password to sshpass -e through the child environment, never
+        // process argv, and retain a copy only for the streaming redactor.
         let stored_secret = if program == "sshpass" {
             crate::vault::get_secret(&crate::vault::secret_ref(&server.id))
                 .ok()
@@ -139,33 +136,29 @@ impl PtyManager {
         } else {
             None
         };
-        if let Some(pw) = stored_secret.as_deref() {
-            cmd.env("SSHPASS", pw);
+        if let Some(password) = stored_secret.as_deref() {
+            cmd.env("SSHPASS", password);
         }
 
         let child = pair.slave.spawn_command(cmd)?;
-        // Drop the slave handle so EOF propagates when the child exits.
         drop(pair.slave);
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
 
-        // Reader thread: pump bytes to the UI until EOF.
-        let ev = format!("pty://output/{id}");
-        let exit_ev = format!("pty://exit/{id}");
+        let output_event = format!("pty://output/{id}");
+        let exit_event = format!("pty://exit/{id}");
         let app_for_thread = app.clone();
         std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
+            let mut buffer = [0u8; 8192];
             let mut redactor = StreamRedactor::new(stored_secret);
             loop {
-                match reader.read(&mut buf) {
+                match reader.read(&mut buffer) {
                     Ok(0) => break,
-                    Ok(n) => {
-                        // Send raw bytes; the frontend feeds them to xterm,
-                        // which handles partial UTF-8 sequences correctly.
-                        let bytes = redactor.push(&buf[..n]);
+                    Ok(size) => {
+                        let bytes = redactor.push(&buffer[..size]);
                         if !bytes.is_empty() {
-                            let _ = app_for_thread.emit(&ev, bytes);
+                            let _ = app_for_thread.emit(&output_event, bytes);
                         }
                     }
                     Err(_) => break,
@@ -173,9 +166,9 @@ impl PtyManager {
             }
             let tail = redactor.finish();
             if !tail.is_empty() {
-                let _ = app_for_thread.emit(&ev, tail);
+                let _ = app_for_thread.emit(&output_event, tail);
             }
-            let _ = app_for_thread.emit(&exit_ev, ());
+            let _ = app_for_thread.emit(&exit_event, ());
         });
 
         self.sessions.lock().unwrap().insert(
@@ -189,7 +182,6 @@ impl PtyManager {
         Ok(())
     }
 
-    /// Write user keystrokes to the PTY.
     pub fn write(&self, id: &str, data: &[u8]) -> Result<()> {
         let mut guard = self.sessions.lock().unwrap();
         let session = guard
@@ -200,7 +192,6 @@ impl PtyManager {
         Ok(())
     }
 
-    /// Resize the PTY to match the xterm viewport.
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<()> {
         let guard = self.sessions.lock().unwrap();
         let session = guard
@@ -215,12 +206,26 @@ impl PtyManager {
         Ok(())
     }
 
-    /// Kill and remove a session (tab closed or reconnect requested).
+    /// Kill, reap, and remove a session. Waiting after kill prevents a closed
+    /// SSH child from remaining as a zombie until application shutdown.
     pub fn close(&self, id: &str) -> Result<()> {
         if let Some(mut session) = self.sessions.lock().unwrap().remove(id) {
             let _ = session.child.kill();
+            let _ = session.child.wait();
         }
         Ok(())
+    }
+}
+
+impl Drop for PtyManager {
+    fn drop(&mut self) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            for (_, session) in sessions.iter_mut() {
+                let _ = session.child.kill();
+                let _ = session.child.wait();
+            }
+            sessions.clear();
+        }
     }
 }
 
