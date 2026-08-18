@@ -52,10 +52,9 @@ pub fn validate(config: &JumpHostConfig) -> Result<()> {
     host_identity::validate_target(&config.host, config.port)?;
     let username_ok = !config.username.is_empty()
         && config.username == config.username.trim()
-        && config
-            .username
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'));
+        && config.username.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        });
     if !username_ok {
         return Err(anyhow!(
             "jump-host username may contain only letters, numbers, dot, underscore, and hyphen"
@@ -156,7 +155,10 @@ pub fn save(conn: &Connection, config: &JumpHostConfig) -> Result<()> {
 
 pub fn delete(conn: &Connection, server_id: &str) -> Result<()> {
     ensure_schema(conn)?;
-    conn.execute("DELETE FROM jump_hosts WHERE server_id=?1", params![server_id])?;
+    conn.execute(
+        "DELETE FROM jump_hosts WHERE server_id=?1",
+        params![server_id],
+    )?;
     forget(server_id);
     Ok(())
 }
