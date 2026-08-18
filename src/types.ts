@@ -186,6 +186,32 @@ export interface RemoteFile {
   permissions: string;
 }
 
+export interface HostKeyCandidate {
+  key_type: string;
+  fingerprint: string;
+}
+
+export interface HostIdentityReport {
+  host: string;
+  port: number;
+  status: "unseen" | "trusted" | "changed";
+  candidates: HostKeyCandidate[];
+  trusted_fingerprints: string[];
+}
+
+export interface RuntimeDependencyStatus {
+  id: string;
+  label: string;
+  required: boolean;
+  available: boolean;
+  detail: string;
+}
+
+export interface RuntimePreflightReport {
+  ready: boolean;
+  dependencies: RuntimeDependencyStatus[];
+}
+
 // ---- UI-only types ----
 
 export type TabKind = "ssh" | "rdp" | "vnc" | "logs" | "runbook" | "sftp" | "ftp";
@@ -195,7 +221,6 @@ export interface Tab {
   kind: TabKind;
   serverId: string;
   title: string;
-  // For runbook tabs: which runbook to run.
   runbookId?: string;
 }
 
