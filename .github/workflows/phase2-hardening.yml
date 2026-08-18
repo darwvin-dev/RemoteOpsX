@@ -1,0 +1,72 @@
+name: Phase2 Hardening
+
+on:
+  push:
+    branches: [agent/operator-data-plane]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - name: Fix alert sample semantics and SCP stderr draining
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src-tauri/src/operator_data.rs')
+          s = p.read_text()
+          old = '''    if due {\n        let point = health_point(server_id, snapshot, now_text.clone());'''
+          if old not in s:
+              raise SystemExit('health due block marker missing')
+          # Keep insertion block intact, but only evaluate on persisted 30-second samples.
+          old_tail = '''    }\n\n    evaluate_alerts(conn, server_id, snapshot)\n}'''
+          new_tail = '''        return evaluate_alerts(conn, server_id, snapshot);\n    }\n\n    Ok(Vec::new())\n}'''
+          if old_tail not in s:
+              raise SystemExit('health evaluation tail marker missing')
+          s = s.replace(old_tail, new_tail, 1)
+
+          old_alert = '''        let needed_previous = rule.consecutive_samples.saturating_sub(1) as usize;\n        if needed_previous > 0 {\n            let all_previous_match = history\n                .iter()\n                .take(needed_previous)\n                .all(|point| matches_threshold(&rule, historical_metric(point, &rule.metric)));\n            if history.len() < needed_previous || !all_previous_match {\n                continue;\n            }\n        }'''
+          new_alert = '''        let needed_previous = rule.consecutive_samples.saturating_sub(1) as usize;\n        if needed_previous > 0 {\n            // history[0] is the sample that triggered this evaluation; only prior\n            // persisted 30-second samples count toward the consecutive gate.\n            let available_previous = history.len().saturating_sub(1);\n            let all_previous_match = history\n                .iter()\n                .skip(1)\n                .take(needed_previous)\n                .all(|point| matches_threshold(&rule, historical_metric(point, &rule.metric)));\n            if available_previous < needed_previous || !all_previous_match {\n                continue;\n            }\n        }'''
+          if old_alert not in s:
+              raise SystemExit('consecutive alert block marker missing')
+          s = s.replace(old_alert, new_alert, 1)
+          p.write_text(s)
+
+          p = Path('src-tauri/src/transfer_manager.rs')
+          s = p.read_text()
+          if 'use std::io::Read;' not in s:
+              s = s.replace('use std::fs;\n', 'use std::fs;\nuse std::io::Read;\n')
+          # Quiet SCP progress so the stderr pipe only carries bounded diagnostic output.
+          marker = '''        args.extend([\n            "-o".into(),\n            format!("ControlPath={}", control_path.to_string_lossy()),'''
+          replacement = '''        args.push("-q".into());\n        args.extend([\n            "-o".into(),\n            format!("ControlPath={}", control_path.to_string_lossy()),'''
+          if marker not in s:
+              raise SystemExit('scp args marker missing')
+          s = s.replace(marker, replacement, 1)
+
+          old_failure = '''                        } else {\n                            job.status = "failed".into();\n                            job.error = Some(redaction::redact(format!(\n                                "scp exited with status {status}"\n                            )));\n                        }'''
+          new_failure = '''                        } else {\n                            job.status = "failed".into();\n                            let mut stderr = String::new();\n                            if let Some(mut pipe) = process.child.stderr.take() {\n                                let _ = pipe.read_to_string(&mut stderr);\n                            }\n                            job.error = Some(redaction::redact(if stderr.trim().is_empty() {\n                                format!("scp exited with status {status}")\n                            } else {\n                                stderr.trim().to_string()\n                            }));\n                        }'''
+          if old_failure not in s:
+              raise SystemExit('scp failure block marker missing')
+          s = s.replace(old_failure, new_failure, 1)
+          p.write_text(s)
+          PY
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+      - name: Commit hardening and remove helper
+        run: |
+          git rm .github/workflows/phase2-hardening.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src-tauri/src/operator_data.rs src-tauri/src/transfer_manager.rs
+          git commit -m 'fix: harden alert sampling and transfer diagnostics'
+          git push origin HEAD:agent/operator-data-plane
