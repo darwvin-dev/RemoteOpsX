@@ -68,8 +68,6 @@ pub fn known_hosts_path() -> Result<PathBuf> {
 
 fn strict_options_for_path(path: &Path) -> Vec<String> {
     vec![
-        // Ignore user/system ssh_config so ProxyCommand and trust behavior are
-        // fully app-owned and deterministic.
         "-F".into(),
         "/dev/null".into(),
         "-o".into(),
@@ -193,7 +191,9 @@ pub fn trust(
     expected_fingerprint: &str,
     replace: bool,
 ) -> Result<HostIdentityReport> {
-    trust_from_scan(host, port, expected_fingerprint, replace, || scan_lines(host, port))
+    trust_from_scan(host, port, expected_fingerprint, replace, || {
+        scan_lines(host, port)
+    })
 }
 
 pub fn trust_via_jump(
