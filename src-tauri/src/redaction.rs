@@ -70,36 +70,30 @@ pub fn redact_step_result(mut result: StepResult) -> StepResult {
     result
 }
 
-pub fn reset_for_tests() {
-    KNOWN_SECRETS
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clear();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn redacts_registered_secrets_from_arbitrary_text() {
-        reset_for_tests();
-        register_secret("super-secret-token");
-        let value = redact("stdout=super-secret-token stderr=super-secret-token");
+        register_secret("redaction-test-super-secret-token");
+        let value = redact(
+            "stdout=redaction-test-super-secret-token stderr=redaction-test-super-secret-token",
+        );
         assert_eq!(value, "stdout=•••••• stderr=••••••");
     }
 
     #[test]
     fn detects_known_secret_before_persistence() {
-        reset_for_tests();
-        register_secret("database-canary-secret");
-        assert!(contains_known_secret("echo database-canary-secret"));
+        register_secret("redaction-test-database-canary-secret");
+        assert!(contains_known_secret(
+            "echo redaction-test-database-canary-secret"
+        ));
         assert!(!contains_known_secret("echo safe"));
     }
 
     #[test]
     fn ignores_tiny_values_to_avoid_destroying_normal_output() {
-        reset_for_tests();
         register_secret("abc");
         assert_eq!(redact("abc is common text"), "abc is common text");
         assert!(!contains_known_secret("abc is common text"));
@@ -107,25 +101,24 @@ mod tests {
 
     #[test]
     fn masks_command_output_and_runbook_command_fields() {
-        reset_for_tests();
-        register_secret("password123");
+        register_secret("redaction-test-password-123");
         let output = redact_command_output(CommandOutput {
-            stdout: "password123".into(),
-            stderr: "failed: password123".into(),
+            stdout: "redaction-test-password-123".into(),
+            stderr: "failed: redaction-test-password-123".into(),
             exit_code: 1,
             success: false,
         });
-        assert!(!output.stdout.contains("password123"));
-        assert!(!output.stderr.contains("password123"));
+        assert!(!output.stdout.contains("redaction-test-password-123"));
+        assert!(!output.stderr.contains("redaction-test-password-123"));
 
         let step = redact_step_result(StepResult {
             name: "test".into(),
-            command: "curl -u user:password123 host".into(),
+            command: "curl -u user:redaction-test-password-123 host".into(),
             stdout: "ok".into(),
             stderr: String::new(),
             exit_code: 0,
             status: "success".into(),
         });
-        assert!(!step.command.contains("password123"));
+        assert!(!step.command.contains("redaction-test-password-123"));
     }
 }
