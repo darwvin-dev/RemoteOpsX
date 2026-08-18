@@ -1,0 +1,24 @@
+name: Phase3 Helper Cleanup
+
+on:
+  push:
+    branches: [agent/operator-experience]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Remove one-shot helper workflows
+        run: |
+          git rm -f .github/workflows/phase3-wiring-autofix.yml .github/workflows/phase3-cleanup.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'chore: remove phase3 one-shot helpers'
+          git push origin HEAD:agent/operator-experience
