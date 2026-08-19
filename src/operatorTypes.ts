@@ -84,6 +84,7 @@ export interface TransferJob extends TransferRequest {
 }
 
 export interface MultiHostRequest {
+  run_id?: string | null;
   server_ids: string[];
   command: string;
   concurrency: number;
