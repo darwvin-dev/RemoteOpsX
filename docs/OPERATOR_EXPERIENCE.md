@@ -19,3 +19,7 @@ Ctrl/Cmd+K indexes workspace actions, servers, health and diagnostics views, ope
 ## Multi-host cancellation
 
 Multi-host runs carry a caller-generated run ID. Cancellation is cooperative: it prevents future bounded batches from starting, while SSH commands already in flight finish and remain in the persisted audit result. The multi-host worker runs off the Tauri command thread so the cancellation command remains responsive while a batch is active.
+
+## Verification
+
+The experience branch is verified only after the operator data plane has merged into `main`. Its final exact head must then pass PR-title validation, macOS CI, Linux dependency audit, frontend tests/build, rustfmt, Rust tests/build, and the inherited live-SSH integration fixture against that real `main` base.
