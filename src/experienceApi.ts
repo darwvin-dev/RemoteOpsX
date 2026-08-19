@@ -16,6 +16,12 @@ export const runbookPreviewYaml = (contentYaml: string, variables?: Record<strin
     variables: variables ?? null,
   });
 
+export const runbookPreviewSaved = (runbookId: string, variables?: Record<string, string>) =>
+  invoke<RunbookPreview>("runbook_preview_saved", {
+    runbookId,
+    variables: variables ?? null,
+  });
+
 export const runbookImportYaml = (path: string) =>
   invoke<string>("runbook_import_yaml", { path });
 
