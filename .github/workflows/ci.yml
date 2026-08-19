@@ -128,3 +128,72 @@ jobs:
 
       - name: Rust build
         run: cargo build --locked --manifest-path src-tauri/Cargo.toml
+
+  packaged-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      XDG_CONFIG_HOME: ${{ runner.temp }}/remoteopsx-e2e/config
+      XDG_DATA_HOME: ${{ runner.temp }}/remoteopsx-e2e/data
+      XDG_CACHE_HOME: ${{ runner.temp }}/remoteopsx-e2e/cache
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      NO_AT_BRIDGE: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install packaged desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            xvfb \
+            dbus-x11
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-e2e-rust-${{ env.RUST_VERSION }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build test-only Tauri binary
+        run: |
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+          npm run e2e:build
+          test -x src-tauri/target/debug/remoteopsx
+
+      - name: Verify production config stays closed
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          if (config.app?.withGlobalTauri !== false) throw new Error('production withGlobalTauri must remain false');
+          const cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
+          if (!cargo.includes('tauri-plugin-wdio-webdriver = { version = "1", optional = true }')) {
+            throw new Error('embedded WebDriver dependency must remain optional');
+          }
+          NODE
+
+      - name: Packaged desktop smoke
+        run: dbus-run-session -- xvfb-run -a npm run e2e
