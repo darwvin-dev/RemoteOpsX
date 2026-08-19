@@ -63,4 +63,45 @@ fail_in_production '(--password|-password)[= ]' \
   'Do not add literal password command-line arguments; use stdin/env/keyring-safe transport.' \
   "${process_builder_files[@]}"
 
+# Packaged E2E uses an in-process WebDriver HTTP server. Its transport must stay
+# feature-gated and optional so release builds have no WebDriver listener or
+# test-only IPC bridge.
+node - <<'NODE'
+const fs = require('node:fs');
+const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+if (config.app?.withGlobalTauri !== false) {
+  throw new Error('production tauri.conf.json must keep app.withGlobalTauri=false');
+}
+NODE
+
+if grep -Fq 'tauri-plugin-wdio-webdriver' src-tauri/Cargo.toml; then
+  if ! grep -Fq 'tauri-plugin-wdio-webdriver = { version = "1", optional = true }' src-tauri/Cargo.toml; then
+    echo 'SECURITY GATE FAILED: packaged WebDriver dependency must remain optional.' >&2
+    exit 1
+  fi
+  if ! awk '
+    /#\[cfg\(feature = "e2e"\)\]/{guard=NR}
+    /tauri_plugin_wdio_webdriver::init\(\)/{
+      found=1
+      if (!guard || NR-guard > 2) exit 2
+    }
+    END { if (!found) exit 3 }
+  ' src-tauri/src/lib.rs; then
+    echo 'SECURITY GATE FAILED: embedded WebDriver registration must be immediately guarded by feature="e2e".' >&2
+    exit 1
+  fi
+fi
+
+if [[ -f src-tauri/tauri.e2e.conf.json ]]; then
+  if grep -Fq '"wdio:default"' src-tauri/tauri.e2e.conf.json; then
+    echo 'SECURITY GATE FAILED: packaged smoke tests must not enable the WDIO execute/mock IPC bridge.' >&2
+    exit 1
+  fi
+fi
+
+if grep -Fq '"@wdio/tauri-plugin"' package.json; then
+  echo 'SECURITY GATE FAILED: @wdio/tauri-plugin is not permitted in the production dependency graph.' >&2
+  exit 1
+fi
+
 echo 'RemoteOpsX production security source gates passed.'
