@@ -1,0 +1,22 @@
+{
+  "productName": "RemoteOpsX E2E",
+  "identifier": "dev.remoteopsx.e2e",
+  "app": {
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "e2e-main",
+          "description": "Test-only capability for the packaged desktop WebDriver build.",
+          "windows": ["main"],
+          "permissions": [
+            "core:default",
+            "core:event:default",
+            "core:window:default",
+            "dialog:default",
+            "wdio-webdriver:default"
+          ]
+        }
+      ]
+    }
+  }
+}
