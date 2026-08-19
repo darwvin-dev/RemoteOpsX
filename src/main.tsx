@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import "./appearance.css";
 import "./density.css";
+import "./operator-experience.css";
 import { bootstrapSystemTheme } from "./theme";
 
 bootstrapSystemTheme();
