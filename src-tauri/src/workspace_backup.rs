@@ -10,13 +10,13 @@ use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::jump_host::{self, JumpHostConfig};
 use crate::models::{CommandSnippet, CommandSnippetInput, Runbook, Server, ServerInput, Tunnel};
 use crate::operator_data::{self, AlertRule, AlertRuleInput, TunnelPolicy, TunnelPolicyInput};
-use crate::{database, host_identity, redaction, runbook_runner, settings};
+use crate::{database, host_identity, redaction, runbook_runner, settings, vault};
 
 const MAGIC: &str = "REMOTEOPSX-BACKUP-1\n";
 
@@ -131,6 +131,13 @@ pub fn export_encrypted(conn: &Connection, path: &str, password: &str) -> Result
     let mut output = MAGIC.as_bytes().to_vec();
     output.extend_from_slice(&encrypted);
     std::fs::write(path, output)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path)?.permissions();
+        permissions.set_mode(0o600);
+        std::fs::set_permissions(path, permissions)?;
+    }
     Ok(())
 }
 
@@ -144,7 +151,7 @@ fn validate_backup(backup: &WorkspaceBackup) -> Result<()> {
     backup
         .settings
         .validate()
-        .map_err(|error| anyhow!(error.to_string()))?;
+        .map_err(|error| anyhow!(error.message))?;
     for server in &backup.servers {
         let input = server_input(server);
         database::validate_server_input(&input)?;
@@ -203,66 +210,128 @@ pub fn import_encrypted(
     validate_backup(&backup)?;
     operator_data::ensure_schema(conn)?;
 
-    let mut password_reentry_server_ids = Vec::new();
-    for server in &backup.servers {
-        database::save_server_profile(conn, &server_input(server), None, true)?;
-        if server.auth_type == "password" {
-            password_reentry_server_ids.push(server.id.clone());
+    let password_reentry_server_ids = backup
+        .servers
+        .iter()
+        .filter(|server| server.auth_type == "password")
+        .map(|server| server.id.clone())
+        .collect::<Vec<_>>();
+    let restored_server_ids = backup
+        .servers
+        .iter()
+        .map(|server| server.id.clone())
+        .collect::<Vec<_>>();
+
+    let tx = conn.unchecked_transaction()?;
+    let restore_result: Result<()> = (|| {
+        for server in &backup.servers {
+            let input = server_input(server);
+            let id = database::upsert_server(&tx, &input)?;
+            // Backups never contain credentials. Clear SQLite credential metadata
+            // inside the same transaction; OS-keyring cleanup happens after commit.
+            tx.execute("DELETE FROM credentials WHERE server_id=?1", params![id])?;
+        }
+
+        // database::save_settings starts its own transaction, so restore the
+        // already-validated settings row directly inside this import transaction.
+        let settings_json = serde_json::to_string(&backup.settings)?;
+        tx.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)
+             VALUES (1, ?1, ?2, ?3)
+             ON CONFLICT(singleton_id) DO UPDATE SET
+                 schema_version=excluded.schema_version,
+                 value_json=excluded.value_json,
+                 updated_at=excluded.updated_at",
+            params![
+                backup.settings.schema_version,
+                settings_json,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+
+        for runbook in &backup.runbooks {
+            database::save_runbook(
+                &tx,
+                &runbook.name,
+                &runbook.description,
+                &runbook.content_yaml,
+                Some(&runbook.id),
+            )?;
+        }
+        for snippet in &backup.snippets {
+            database::save_command_snippet(
+                &tx,
+                &CommandSnippetInput {
+                    id: Some(snippet.id.clone()),
+                    label: snippet.label.clone(),
+                    command: snippet.command.clone(),
+                    tags: snippet.tags.clone(),
+                },
+            )?;
+        }
+        for jump in &backup.jump_hosts {
+            jump_host::save(&tx, jump)?;
+        }
+        for rule in &backup.alert_rules {
+            operator_data::save_alert_rule(
+                &tx,
+                &AlertRuleInput {
+                    id: Some(rule.id.clone()),
+                    server_id: rule.server_id.clone(),
+                    metric: rule.metric.clone(),
+                    comparison: rule.comparison.clone(),
+                    threshold: rule.threshold,
+                    consecutive_samples: rule.consecutive_samples,
+                    cooldown_seconds: rule.cooldown_seconds,
+                    enabled: rule.enabled,
+                },
+            )?;
+        }
+        for tunnel in &backup.tunnels {
+            database::insert_tunnel(&tx, tunnel)?;
+        }
+        for policy in &backup.tunnel_policies {
+            // Restores are intentionally inert: users explicitly re-enable autostart.
+            operator_data::save_tunnel_policy(
+                &tx,
+                &TunnelPolicyInput {
+                    tunnel_id: policy.tunnel_id.clone(),
+                    autostart: false,
+                    auto_reconnect: policy.auto_reconnect,
+                    health_interval_secs: policy.health_interval_secs,
+                },
+            )?;
+        }
+        Ok(())
+    })();
+
+    if let Err(error) = restore_result {
+        drop(tx);
+        // jump_host::save updates the runtime route cache. After rollback,
+        // re-hydrate so a failed import cannot leave ghost runtime routes.
+        let _ = jump_host::hydrate(conn);
+        return Err(error);
+    }
+    if let Err(error) = tx.commit() {
+        let _ = jump_host::hydrate(conn);
+        return Err(error.into());
+    }
+    jump_host::hydrate(conn)?;
+
+    // A restored server ID may already have a credential in this machine's
+    // keyring. Clear every restored ID so restore can never resurrect a secret
+    // that was not present in the backup payload.
+    let mut cleanup_failures = Vec::new();
+    for server_id in &restored_server_ids {
+        if let Err(error) = vault::delete_secret(&vault::secret_ref(server_id)) {
+            cleanup_failures.push(format!("{server_id}: {error}"));
         }
     }
-    database::save_settings(conn, &backup.settings)?;
-    for runbook in &backup.runbooks {
-        database::save_runbook(
-            conn,
-            &runbook.name,
-            &runbook.description,
-            &runbook.content_yaml,
-            Some(&runbook.id),
-        )?;
-    }
-    for snippet in &backup.snippets {
-        database::save_command_snippet(
-            conn,
-            &CommandSnippetInput {
-                id: Some(snippet.id.clone()),
-                label: snippet.label.clone(),
-                command: snippet.command.clone(),
-                tags: snippet.tags.clone(),
-            },
-        )?;
-    }
-    for jump in &backup.jump_hosts {
-        jump_host::save(conn, jump)?;
-    }
-    for rule in &backup.alert_rules {
-        operator_data::save_alert_rule(
-            conn,
-            &AlertRuleInput {
-                id: Some(rule.id.clone()),
-                server_id: rule.server_id.clone(),
-                metric: rule.metric.clone(),
-                comparison: rule.comparison.clone(),
-                threshold: rule.threshold,
-                consecutive_samples: rule.consecutive_samples,
-                cooldown_seconds: rule.cooldown_seconds,
-                enabled: rule.enabled,
-            },
-        )?;
-    }
-    for tunnel in &backup.tunnels {
-        database::insert_tunnel(conn, tunnel)?;
-    }
-    for policy in &backup.tunnel_policies {
-        // Restores are intentionally inert: users explicitly re-enable autostart.
-        operator_data::save_tunnel_policy(
-            conn,
-            &TunnelPolicyInput {
-                tunnel_id: policy.tunnel_id.clone(),
-                autostart: false,
-                auto_reconnect: policy.auto_reconnect,
-                health_interval_secs: policy.health_interval_secs,
-            },
-        )?;
+    if !cleanup_failures.is_empty() {
+        return Err(anyhow!(
+            "workspace data was restored, but stale credential cleanup failed for: {}",
+            cleanup_failures.join(", ")
+        ));
     }
 
     Ok(BackupRestoreReport {
