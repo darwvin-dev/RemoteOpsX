@@ -328,12 +328,30 @@ pub fn operator_dashboard_summary(state: State<AppState>) -> CommandResult<Dashb
     });
     Ok(DashboardSummary {
         servers_total: rollups.len(),
-        healthy: rollups.iter().filter(|server| server.status == "healthy").count(),
-        warning: rollups.iter().filter(|server| server.status == "warning").count(),
-        critical: rollups.iter().filter(|server| server.status == "critical").count(),
-        unknown: rollups.iter().filter(|server| server.status == "unknown").count(),
-        active_tunnels: tunnels.iter().filter(|tunnel| tunnel.status == "active").count(),
-        failed_tunnels: tunnels.iter().filter(|tunnel| tunnel.status == "failed").count(),
+        healthy: rollups
+            .iter()
+            .filter(|server| server.status == "healthy")
+            .count(),
+        warning: rollups
+            .iter()
+            .filter(|server| server.status == "warning")
+            .count(),
+        critical: rollups
+            .iter()
+            .filter(|server| server.status == "critical")
+            .count(),
+        unknown: rollups
+            .iter()
+            .filter(|server| server.status == "unknown")
+            .count(),
+        active_tunnels: tunnels
+            .iter()
+            .filter(|tunnel| tunnel.status == "active")
+            .count(),
+        failed_tunnels: tunnels
+            .iter()
+            .filter(|tunnel| tunnel.status == "failed")
+            .count(),
         unacknowledged_alerts,
         servers: rollups,
         recent_alerts: alerts.into_iter().take(20).collect(),
