@@ -204,20 +204,43 @@ function MultiHostOps({ servers, reportError }: { servers: ReturnType<typeof use
   const [productionConfirmed, setProductionConfirmed] = useState(false);
   const [destructiveConfirmed, setDestructiveConfirmed] = useState(false);
   const [run, setRun] = useState<MultiHostRun | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const selectedServers = useMemo(() => servers.filter((server) => selected.includes(server.id)), [servers, selected]);
   const includesProduction = selectedServers.some((server) => server.environment === "production");
   const looksDestructive = /rm\s+-rf|mkfs|shutdown|poweroff|reboot|halt|dd\s+if=|systemctl\s+(stop|restart)|kubectl\s+delete/i.test(command);
 
   async function execute() {
+    const runId = crypto.randomUUID();
+    setRunningId(runId);
+    setCancelRequested(false);
+    setRun(null);
     try {
       setRun(await operatorApi.multiHostRun({
+        run_id: runId,
         server_ids: selected,
         command,
         concurrency,
         production_confirmed: productionConfirmed,
         destructive_confirmed: destructiveConfirmed,
       }));
-    } catch (reason) { reportError(reason); }
+    } catch (reason) {
+      reportError(reason);
+    } finally {
+      setRunningId(null);
+      setCancelRequested(false);
+    }
+  }
+
+  async function cancelRun() {
+    if (!runningId) return;
+    setCancelRequested(true);
+    try {
+      await operatorApi.multiHostCancel(runningId);
+    } catch (reason) {
+      reportError(reason);
+      setCancelRequested(false);
+    }
   }
 
   return (
@@ -234,7 +257,13 @@ function MultiHostOps({ servers, reportError }: { servers: ReturnType<typeof use
       </div>
       {includesProduction ? <div className="warn-banner">⚠ Selection includes production servers.</div> : null}
       {looksDestructive ? <div className="warn-banner">⚠ Command matches a destructive-operation family.</div> : null}
-      <button className="primary" disabled={!selected.length || !command.trim()} onClick={() => void execute()}>Run on {selected.length} host{selected.length === 1 ? "" : "s"}</button>
+      <div className="flex">
+        <button className="primary" disabled={Boolean(runningId) || !selected.length || !command.trim()} onClick={() => void execute()}>
+          {runningId ? "Running…" : `Run on ${selected.length} host${selected.length === 1 ? "" : "s"}`}
+        </button>
+        {runningId ? <button className="warn" disabled={cancelRequested} onClick={() => void cancelRun()}>{cancelRequested ? "Cancellation requested…" : "Cancel remaining batches"}</button> : null}
+      </div>
+      {runningId ? <div className="panel-hint">Cancellation stops new batches; SSH commands already in flight finish and remain audited.</div> : null}
       {run ? <>
         <div className="section-title">Result · {run.status}</div>
         {run.results.map((result) => <div key={result.server_id} className="list-row"><span>{result.output.success ? "✓" : "✕"} {result.server_name}</span><code>{result.output.success ? result.output.stdout.trim().slice(0, 180) : result.output.stderr.trim().slice(0, 180)}</code></div>)}

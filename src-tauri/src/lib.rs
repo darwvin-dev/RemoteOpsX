@@ -5,6 +5,7 @@
 
 pub mod database;
 pub mod error;
+pub mod experience_commands;
 pub mod ftp_manager;
 pub mod health_collector;
 pub mod host_identity;
@@ -899,9 +900,15 @@ pub fn run() {
             operator_commands::tunnel_policy_save,
             operator_commands::tunnels_reconcile,
             operator_commands::multi_host_run,
+            operator_commands::multi_host_cancel,
             operator_commands::multi_host_runs_list,
             operator_commands::workspace_backup_export,
             operator_commands::workspace_backup_import,
+            experience_commands::runbook_preview_yaml,
+            experience_commands::runbook_preview_saved,
+            experience_commands::runbook_import_yaml,
+            experience_commands::runbook_export_yaml,
+            experience_commands::operator_dashboard_summary,
             save_text_file,
         ])
         .run(tauri::generate_context!())
