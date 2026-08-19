@@ -1,0 +1,26 @@
+# Packaged Desktop E2E
+
+RemoteOpsX has a Linux CI gate that drives the actual Tauri desktop binary rather than only the Vite renderer.
+
+## Test boundary
+
+The E2E build uses the Cargo feature `e2e` and the configuration overlay `src-tauri/tauri.e2e.conf.json`. The overlay gives the test build a separate application identifier and replaces the capability set with the normal main-window permissions plus `wdio-webdriver:default`.
+
+The production `tauri.conf.json` continues to set `withGlobalTauri` to `false`. The richer `@wdio/tauri-plugin` execute/mock bridge is intentionally not installed or enabled. `tauri-plugin-wdio-webdriver` is an optional Rust dependency and is registered only under `#[cfg(feature = "e2e")]`, so ordinary debug/release builds do not start a WebDriver listener.
+
+## CI flow
+
+The `packaged-e2e` job:
+
+1. installs the Linux libraries required to build/run Tauri plus Xvfb and a DBus session;
+2. uses isolated XDG config/data/cache directories inside the runner;
+3. builds an unbundled debug binary with the `e2e` feature and the E2E config overlay;
+4. verifies the production config and optional dependency boundary;
+5. starts the real desktop app through WebdriverIO's embedded WebDriver provider under Xvfb/DBus;
+6. runs the smoke suite in `e2e/specs/desktop-smoke.e2e.mjs`.
+
+## Smoke coverage
+
+The suite proves that the packaged app window boots into the persisted Operations Dashboard, the universal command palette is interactive, Runbook Studio can validate/dry-run through the Rust backend, and settings can be saved and read back through real Tauri IPC and SQLite.
+
+The suite does not store credentials, contact real servers, or execute SSH commands.
