@@ -10,6 +10,8 @@ The production `tauri.conf.json` continues to set `withGlobalTauri` to `false`. 
 
 The JavaScript test side deliberately has no WebdriverIO dependency. `e2e/run.mjs` uses Node's built-in `fetch` to speak the W3C WebDriver HTTP protocol directly to the feature-gated embedded server on loopback. This keeps the E2E dependency graph small and keeps `npm audit --audit-level=high` applicable to the complete JavaScript dependency tree without exceptions.
 
+The initial WebdriverIO client experiment was removed after the locked dependency graph produced high-severity audit findings. The reduced graph was regenerated from `package.json` and verified with locked install, strict high-severity audit, the production security source gates, and the normal frontend build before the temporary lock-refresh workflow removed itself.
+
 ## CI flow
 
 The `packaged-e2e` job:
