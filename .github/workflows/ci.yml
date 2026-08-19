@@ -27,12 +27,12 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          timeout --foreground 8m sudo apt-get \
+          timeout --foreground --signal=TERM --kill-after=30s 8m sudo apt-get \
             -o Acquire::Retries=5 \
             -o Acquire::http::Timeout=30 \
             -o Acquire::https::Timeout=30 \
             update
-          timeout --foreground 12m sudo apt-get \
+          timeout --foreground --signal=TERM --kill-after=30s 12m sudo apt-get \
             -o Acquire::Retries=5 \
             -o Acquire::http::Timeout=30 \
             -o Acquire::https::Timeout=30 \
