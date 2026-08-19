@@ -8,6 +8,8 @@ export interface RunbookPreviewStep {
   requires_confirmation: boolean;
   destructive: boolean;
   unresolved_variables: string[];
+  success_pattern?: string | null;
+  failure_pattern?: string | null;
 }
 
 export interface RunbookPreview {
