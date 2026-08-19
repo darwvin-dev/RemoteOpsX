@@ -133,13 +133,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      XDG_CONFIG_HOME: ${{ runner.temp }}/remoteopsx-e2e/config
-      XDG_DATA_HOME: ${{ runner.temp }}/remoteopsx-e2e/data
-      XDG_CACHE_HOME: ${{ runner.temp }}/remoteopsx-e2e/cache
       WEBKIT_DISABLE_DMABUF_RENDERER: "1"
       NO_AT_BRIDGE: "1"
     steps:
       - uses: actions/checkout@v6
+
+      - name: Isolate application data
+        run: |
+          echo "XDG_CONFIG_HOME=$RUNNER_TEMP/remoteopsx-e2e/config" >> "$GITHUB_ENV"
+          echo "XDG_DATA_HOME=$RUNNER_TEMP/remoteopsx-e2e/data" >> "$GITHUB_ENV"
+          echo "XDG_CACHE_HOME=$RUNNER_TEMP/remoteopsx-e2e/cache" >> "$GITHUB_ENV"
+          mkdir -p \
+            "$RUNNER_TEMP/remoteopsx-e2e/config" \
+            "$RUNNER_TEMP/remoteopsx-e2e/data" \
+            "$RUNNER_TEMP/remoteopsx-e2e/cache"
 
       - name: Install packaged desktop dependencies
         run: |
@@ -179,7 +186,6 @@ jobs:
 
       - name: Build test-only Tauri binary
         run: |
-          mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
           npm run e2e:build
           test -x src-tauri/target/debug/remoteopsx
 
