@@ -13,8 +13,8 @@ use crate::operator_data::{
 use crate::transfer_manager::{TransferJob, TransferRequest};
 use crate::workspace_backup::BackupRestoreReport;
 use crate::{
-    database, jump_host, multi_host, operator_data, redaction, transfer_manager, tunnel_resilience,
-    workspace_backup, AppState,
+    database, jump_host, multi_host, operator_data, redaction, tunnel_resilience, workspace_backup,
+    AppState,
 };
 
 static BOOTSTRAPPED: AtomicBool = AtomicBool::new(false);
