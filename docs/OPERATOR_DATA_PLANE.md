@@ -21,3 +21,7 @@ Tunnel policy is desired state. Autostart and auto-reconnect reconcile persisted
 ## Workspace backup
 
 Backups are versioned and encrypted with OpenSSL AES-256-CBC plus PBKDF2. The passphrase is supplied through environment state rather than process argv. Keyring credentials are never exported. Restore validates first, applies SQLite data transactionally, restores tunnels inert, and clears stale local credentials for every restored server ID so password profiles require explicit credential re-entry.
+
+## Verification boundary
+
+The data plane is accepted only when the exact PR head passes the production security source gates, frontend tests/build, rustfmt, Rust tests/build, macOS CI, and the Linux live-SSH fixture. A cancelled or stalled runner is treated as infrastructure noise and is replaced with a fresh exact-head run rather than weakening the merge gate.
