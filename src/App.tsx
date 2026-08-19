@@ -8,6 +8,7 @@ import { TabContent } from "./components/TabContent";
 import { RightPanel } from "./components/RightPanel";
 import { BottomPanel } from "./components/BottomPanel";
 import { RunbookLauncher } from "./components/RunbookLauncher";
+import { RunbookStudio } from "./components/RunbookStudio";
 import { TunnelManager } from "./components/TunnelManager";
 import { JumpHostManager } from "./components/JumpHostManager";
 import { OperatorCenter } from "./components/OperatorCenter";
@@ -28,6 +29,7 @@ export default function App() {
   const [editing, setEditing] = useState<Server | null | undefined>(undefined);
   const [initialFolder, setInitialFolder] = useState<string | undefined>(undefined);
   const [showRunbooks, setShowRunbooks] = useState(false);
+  const [showRunbookStudio, setShowRunbookStudio] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
   const [showJumpHosts, setShowJumpHosts] = useState(false);
   const [showOperatorCenter, setShowOperatorCenter] = useState(false);
@@ -94,7 +96,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand"><span className="logo" /><span>RemoteOpsX</span></div>
         <button ref={commandTriggerRef} className="command-trigger" onClick={() => setPaletteOpen(true)}>
-          <span>Search servers, actions, runbooks…</span><kbd>Ctrl K</kbd>
+          <span>Search servers, health, runbooks, snippets…</span><kbd>Ctrl K</kbd>
         </button>
         <div className="spacer" />
         {!settingsInitialized ? <span className="status-chip" role="status">Loading settings…</span> : null}
@@ -105,6 +107,7 @@ export default function App() {
           <button className="status-chip alert-chip" onClick={() => setBottomPanel("alerts")}>{alerts.length} alerts</button>
         </div>
         <button className="tiny" onClick={() => setShowRunbooks(true)}>Runbooks</button>
+        <button className="tiny" onClick={() => setShowRunbookStudio(true)}>Studio</button>
         <button className="tiny" onClick={() => setShowTunnels(true)}>Tunnels</button>
         <button className="tiny" onClick={() => setShowOperatorCenter(true)}>Operations</button>
         <button className="tiny" onClick={() => setShowJumpHosts(true)}>Bastions</button>
@@ -114,7 +117,12 @@ export default function App() {
       <ServerSidebar onNew={openNewServer} onEdit={openEditServer} />
       <main className="main">
         <TabBar />
-        <TabContent onNewServer={openNewServer} onOpenRunbooks={() => setShowRunbooks(true)} onOpenTunnels={() => setShowTunnels(true)} />
+        <TabContent
+          onNewServer={openNewServer}
+          onOpenRunbooks={() => setShowRunbooks(true)}
+          onOpenTunnels={() => setShowTunnels(true)}
+          onOpenOperations={() => setShowOperatorCenter(true)}
+        />
       </main>
       {!rightCollapsed && <RightPanel />}
       <BottomPanel />
@@ -125,7 +133,9 @@ export default function App() {
         onClose={() => setPaletteOpen(false)}
         onNewServer={() => openNewServer()}
         onOpenRunbooks={() => setShowRunbooks(true)}
+        onOpenRunbookStudio={() => setShowRunbookStudio(true)}
         onOpenTunnels={() => setShowTunnels(true)}
+        onOpenOperations={() => setShowOperatorCenter(true)}
         onOpenSettings={() => openSettings(commandTriggerRef.current)}
       />
 
@@ -133,6 +143,7 @@ export default function App() {
         <ServerForm server={editing} initialFolder={initialFolder} onClose={() => { setEditing(undefined); setInitialFolder(undefined); }} />
       )}
       {showRunbooks && <RunbookLauncher onClose={() => setShowRunbooks(false)} />}
+      {showRunbookStudio && <RunbookStudio onClose={() => setShowRunbookStudio(false)} />}
       {showTunnels && <TunnelManager onClose={() => setShowTunnels(false)} />}
       {showJumpHosts && <JumpHostManager onClose={() => setShowJumpHosts(false)} />}
       {showOperatorCenter && <OperatorCenter onClose={() => setShowOperatorCenter(false)} />}
