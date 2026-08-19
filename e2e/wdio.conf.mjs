@@ -21,12 +21,10 @@ export const config = {
     ui: "bdd",
     timeout: 60_000,
   },
-  services: [["tauri", {
+  services: [["@wdio/tauri-service", {
     appBinaryPath,
     driverProvider: "embedded",
     embeddedPort: 4445,
-    captureBackendLogs: true,
-    captureFrontendLogs: true,
   }]],
   capabilities: [{
     browserName: "tauri",
