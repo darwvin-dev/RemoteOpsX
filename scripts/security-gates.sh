@@ -72,6 +72,15 @@ const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
 if (config.app?.withGlobalTauri !== false) {
   throw new Error('production tauri.conf.json must keep app.withGlobalTauri=false');
 }
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const packageNames = [
+  ...Object.keys(pkg.dependencies || {}),
+  ...Object.keys(pkg.devDependencies || {}),
+  ...Object.keys(pkg.optionalDependencies || {}),
+];
+if (packageNames.some((name) => name.startsWith('@wdio/') || name === 'webdriverio')) {
+  throw new Error('packaged E2E must use the dependency-free W3C client; JavaScript WebdriverIO packages are not permitted');
+}
 NODE
 
 if grep -Fq 'tauri-plugin-wdio-webdriver' src-tauri/Cargo.toml; then
@@ -97,11 +106,6 @@ if [[ -f src-tauri/tauri.e2e.conf.json ]]; then
     echo 'SECURITY GATE FAILED: packaged smoke tests must not enable the WDIO execute/mock IPC bridge.' >&2
     exit 1
   fi
-fi
-
-if grep -Fq '"@wdio/tauri-plugin"' package.json; then
-  echo 'SECURITY GATE FAILED: @wdio/tauri-plugin is not permitted in the production dependency graph.' >&2
-  exit 1
 fi
 
 echo 'RemoteOpsX production security source gates passed.'
