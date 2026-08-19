@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{CommandResult, DomainError};
-use crate::models::{RunbookRun, RunbookSpec, RunbookStep, Tunnel};
+use crate::models::{RunbookRun, RunbookSpec, Tunnel};
 use crate::operator_data::{MultiHostRun, OperatorAlert};
 use crate::{database, multi_host, operator_data, redaction, runbook_runner, AppState};
 
@@ -25,6 +25,8 @@ pub struct RunbookPreviewStep {
     pub requires_confirmation: bool,
     pub destructive: bool,
     pub unresolved_variables: Vec<String>,
+    pub success_pattern: Option<String>,
+    pub failure_pattern: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,45 +37,55 @@ pub struct RunbookPreview {
     pub valid: bool,
 }
 
-fn variable_names(command: &str) -> Vec<String> {
-    let bytes = command.as_bytes();
-    let mut names = BTreeSet::new();
-    let mut index = 0;
-    while index + 3 < bytes.len() {
-        if bytes[index] == b'{' && bytes[index + 1] == b'{' {
-            if let Some(end) = command[index + 2..].find("}}") {
-                let raw = &command[index + 2..index + 2 + end];
-                let name = raw.trim();
-                if !name.is_empty()
-                    && name
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
-                {
-                    names.insert(name.to_string());
-                }
-                index += end + 4;
-                continue;
-            }
-        }
-        index += 1;
-    }
-    names.into_iter().collect()
+fn valid_variable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
-fn substitute(command: &str, variables: &HashMap<String, String>) -> (String, Vec<String>) {
-    let mut rendered = command.to_string();
-    let mut unresolved = Vec::new();
-    for name in variable_names(command) {
-        let compact = format!("{{{{{name}}}}}");
-        let spaced = format!("{{{{ {name} }}}}");
-        match variables.get(&name) {
-            Some(value) if !value.is_empty() => {
-                rendered = rendered.replace(&compact, value).replace(&spaced, value);
-            }
-            _ => unresolved.push(name),
+/// Render every `{{ variable }}` span in one pass. This deliberately parses the
+/// exact source spans rather than replacing a couple of whitespace variants, so
+/// preview and execution cannot disagree on `{{name}}`, `{{ name }}` or wider
+/// spacing. Malformed template syntax is rejected instead of being treated as a
+/// valid dry-run.
+fn substitute(
+    command: &str,
+    variables: &HashMap<String, String>,
+) -> CommandResult<(String, Vec<String>)> {
+    let mut rendered = String::with_capacity(command.len());
+    let mut unresolved = BTreeSet::new();
+    let mut remaining = command;
+
+    while let Some(start) = remaining.find("{{") {
+        rendered.push_str(&remaining[..start]);
+        let after_open = &remaining[start + 2..];
+        let Some(relative_end) = after_open.find("}}") else {
+            return Err(DomainError::validation(
+                "command",
+                "runbook variable placeholder is missing a closing }}",
+            ));
+        };
+        let raw = &after_open[..relative_end];
+        let name = raw.trim();
+        if !valid_variable_name(name) {
+            return Err(DomainError::validation(
+                "command",
+                "runbook variables must use letters, numbers, or underscore inside {{...}}",
+            ));
         }
+        match variables.get(name) {
+            Some(value) if !value.is_empty() => rendered.push_str(value),
+            _ => {
+                unresolved.insert(name.to_string());
+                rendered.push_str(&remaining[start..start + 2 + relative_end + 2]);
+            }
+        }
+        remaining = &after_open[relative_end + 2..];
     }
-    (rendered, unresolved)
+    rendered.push_str(remaining);
+
+    Ok((rendered, unresolved.into_iter().collect()))
 }
 
 fn preview_yaml(
@@ -103,6 +115,7 @@ fn preview_yaml(
             "runbook must contain at least one step",
         ));
     }
+
     let mut resolved_variables = spec.variables.clone();
     if let Some(overrides) = variables {
         resolved_variables.extend(overrides);
@@ -119,15 +132,21 @@ fn preview_yaml(
                     format!("step {} requires a name and command", index + 1),
                 ));
             }
-            let (command, unresolved_variables) = substitute(&step.command, &resolved_variables);
+            let (command, unresolved_variables) = substitute(&step.command, &resolved_variables)?;
             all_unresolved.extend(unresolved_variables.iter().cloned());
+            let destructive = multi_host::looks_destructive(&command);
             Ok(RunbookPreviewStep {
                 index,
                 name: step.name.clone(),
-                destructive: multi_host::looks_destructive(&command),
                 command,
-                requires_confirmation: step.requires_confirmation,
+                // A rendered variable can turn a benign template into a
+                // destructive operation. Confirmation is therefore derived
+                // after rendering and cannot be disabled by the YAML author.
+                requires_confirmation: step.requires_confirmation || destructive,
+                destructive,
                 unresolved_variables,
+                success_pattern: step.success_pattern.clone(),
+                failure_pattern: step.failure_pattern.clone(),
             })
         })
         .collect::<CommandResult<Vec<_>>>()?;
@@ -146,6 +165,25 @@ pub fn runbook_preview_yaml(
     variables: Option<HashMap<String, String>>,
 ) -> CommandResult<RunbookPreview> {
     preview_yaml(&content_yaml, variables)
+}
+
+/// Prepare a saved runbook immediately before execution. The frontend executes
+/// only these server-rendered commands, keeping variable resolution and
+/// destructive confirmation policy identical to Studio's dry-run preview.
+#[tauri::command]
+pub fn runbook_preview_saved(
+    state: State<AppState>,
+    runbook_id: String,
+    variables: Option<HashMap<String, String>>,
+) -> CommandResult<RunbookPreview> {
+    let runbook = {
+        let conn = state
+            .db
+            .lock()
+            .map_err(|_| DomainError::internal("database lock poisoned"))?;
+        internal(database::get_runbook(&conn, &runbook_id))?
+    };
+    preview_yaml(&runbook.content_yaml, variables)
 }
 
 #[tauri::command]
@@ -221,12 +259,7 @@ pub struct DashboardSummary {
     pub recent_multi_host: Vec<MultiHostRun>,
 }
 
-fn quick_status(
-    cpu: f64,
-    memory: f64,
-    disk: f64,
-    failed_services: u32,
-) -> &'static str {
+fn quick_status(cpu: f64, memory: f64, disk: f64, failed_services: u32) -> &'static str {
     if failed_services > 0 || cpu >= 95.0 || memory >= 95.0 || disk >= 95.0 {
         "critical"
     } else if cpu >= 80.0 || memory >= 85.0 || disk >= 85.0 {
@@ -314,7 +347,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_renders_variables_and_marks_destructive_steps() {
+    fn preview_renders_variable_whitespace_and_marks_destructive_steps() {
         let yaml = r#"name: Deploy
 description: Preview
 target_os: linux
@@ -322,14 +355,16 @@ variables:
   service: nginx
 steps:
   - name: Status
-    command: systemctl status {{service}}
+    command: systemctl status {{  service   }}
   - name: Restart
-    command: sudo systemctl restart {{service}}
-    requires_confirmation: true
+    command: sudo systemctl {{action}} {{service}}
 "#;
-        let preview = preview_yaml(yaml, None).unwrap();
+        let mut overrides = HashMap::new();
+        overrides.insert("action".into(), "restart".into());
+        let preview = preview_yaml(yaml, Some(overrides)).unwrap();
         assert!(preview.valid);
         assert_eq!(preview.steps[0].command, "systemctl status nginx");
+        assert_eq!(preview.steps[1].command, "sudo systemctl restart nginx");
         assert!(preview.steps[1].destructive);
         assert!(preview.steps[1].requires_confirmation);
     }
@@ -346,5 +381,17 @@ steps:
         let preview = preview_yaml(yaml, None).unwrap();
         assert!(!preview.valid);
         assert_eq!(preview.unresolved_variables, vec!["missing"]);
+    }
+
+    #[test]
+    fn malformed_variable_placeholders_are_rejected() {
+        let yaml = r#"name: Check
+description: Bad variable
+variables: {}
+steps:
+  - name: Check
+    command: echo {{bad-name}}
+"#;
+        assert!(preview_yaml(yaml, None).is_err());
     }
 }
