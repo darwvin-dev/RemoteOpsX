@@ -24,9 +24,19 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Tauri and SSH fixture dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          timeout --foreground 8m sudo apt-get \
+            -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            update
+          timeout --foreground 12m sudo apt-get \
+            -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
@@ -135,6 +145,7 @@ jobs:
     env:
       WEBKIT_DISABLE_DMABUF_RENDERER: "1"
       NO_AT_BRIDGE: "1"
+      DEBIAN_FRONTEND: noninteractive
     steps:
       - uses: actions/checkout@v6
 
@@ -150,8 +161,16 @@ jobs:
 
       - name: Install packaged desktop dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          timeout --foreground 8m sudo apt-get \
+            -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            update
+          timeout --foreground 12m sudo apt-get \
+            -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
