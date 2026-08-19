@@ -1,0 +1,220 @@
+name: Phase2 Restore Hardening
+
+on:
+  push:
+    branches: [agent/operator-data-plane]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - name: Apply compile and restore hardening
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src-tauri/src/lib.rs')
+          s = p.read_text()
+          duplicate = 'use transfer_manager::TransferManager;\nuse transfer_manager::TransferManager;\n'
+          if duplicate not in s:
+              raise SystemExit('duplicate TransferManager import marker missing')
+          p.write_text(s.replace(duplicate, 'use transfer_manager::TransferManager;\n', 1))
+
+          p = Path('src-tauri/src/operator_commands.rs')
+          s = p.read_text()
+          old = 'database, jump_host, multi_host, operator_data, redaction, transfer_manager, tunnel_resilience,\n'
+          new = 'database, jump_host, multi_host, operator_data, redaction, tunnel_resilience,\n'
+          if old not in s:
+              raise SystemExit('unused transfer_manager import marker missing')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('src-tauri/src/workspace_backup.rs')
+          s = p.read_text()
+          s = s.replace('use rusqlite::Connection;', 'use rusqlite::{params, Connection};', 1)
+          s = s.replace(
+              'use crate::{database, host_identity, redaction, runbook_runner, settings};',
+              'use crate::{database, host_identity, redaction, runbook_runner, settings, vault};',
+              1,
+          )
+          bad = '.map_err(|error| anyhow!(error.to_string()))?;'
+          if bad not in s:
+              raise SystemExit('DomainError string conversion marker missing')
+          s = s.replace(bad, '.map_err(|error| anyhow!(error.message))?;', 1)
+
+          export_old = '''    std::fs::write(path, output)?;\n    Ok(())\n}'''
+          export_new = '''    std::fs::write(path, output)?;\n    #[cfg(unix)]\n    {\n        use std::os::unix::fs::PermissionsExt;\n        let mut permissions = std::fs::metadata(path)?.permissions();\n        permissions.set_mode(0o600);\n        std::fs::set_permissions(path, permissions)?;\n    }\n    Ok(())\n}'''
+          if export_old not in s:
+              raise SystemExit('backup export marker missing')
+          s = s.replace(export_old, export_new, 1)
+
+          start = s.index('pub fn import_encrypted(')
+          end = s.index('\n#[cfg(test)]', start)
+          replacement = r'''pub fn import_encrypted(
+    conn: &Connection,
+    path: &str,
+    password: &str,
+) -> Result<BackupRestoreReport> {
+    let bytes = std::fs::read(path)?;
+    if !bytes.starts_with(MAGIC.as_bytes()) {
+        return Err(anyhow!("not a supported RemoteOpsX encrypted backup"));
+    }
+    let plaintext = openssl(&bytes[MAGIC.len()..], password, true)?;
+    let backup: WorkspaceBackup = serde_json::from_slice(&plaintext)
+        .map_err(|_| anyhow!("backup passphrase is incorrect or the backup is corrupted"))?;
+    validate_backup(&backup)?;
+    operator_data::ensure_schema(conn)?;
+
+    let password_reentry_server_ids = backup
+        .servers
+        .iter()
+        .filter(|server| server.auth_type == "password")
+        .map(|server| server.id.clone())
+        .collect::<Vec<_>>();
+    let restored_server_ids = backup
+        .servers
+        .iter()
+        .map(|server| server.id.clone())
+        .collect::<Vec<_>>();
+
+    let tx = conn.unchecked_transaction()?;
+    let restore_result: Result<()> = (|| {
+        for server in &backup.servers {
+            let input = server_input(server);
+            let id = database::upsert_server(&tx, &input)?;
+            // Backups never contain credentials. Remove SQLite metadata inside
+            // the same transaction; OS-keyring cleanup happens after commit.
+            tx.execute("DELETE FROM credentials WHERE server_id=?1", params![id])?;
+        }
+
+        let settings_json = serde_json::to_string(&backup.settings)?;
+        tx.execute(
+            "INSERT INTO app_settings (singleton_id, schema_version, value_json, updated_at)\n\
+             VALUES (1, ?1, ?2, ?3)\n\
+             ON CONFLICT(singleton_id) DO UPDATE SET\n\
+                 schema_version=excluded.schema_version,\n\
+                 value_json=excluded.value_json,\n\
+                 updated_at=excluded.updated_at",
+            params![
+                backup.settings.schema_version,
+                settings_json,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+
+        for runbook in &backup.runbooks {
+            database::save_runbook(
+                &tx,
+                &runbook.name,
+                &runbook.description,
+                &runbook.content_yaml,
+                Some(&runbook.id),
+            )?;
+        }
+        for snippet in &backup.snippets {
+            database::save_command_snippet(
+                &tx,
+                &CommandSnippetInput {
+                    id: Some(snippet.id.clone()),
+                    label: snippet.label.clone(),
+                    command: snippet.command.clone(),
+                    tags: snippet.tags.clone(),
+                },
+            )?;
+        }
+        for jump in &backup.jump_hosts {
+            jump_host::save(&tx, jump)?;
+        }
+        for rule in &backup.alert_rules {
+            operator_data::save_alert_rule(
+                &tx,
+                &AlertRuleInput {
+                    id: Some(rule.id.clone()),
+                    server_id: rule.server_id.clone(),
+                    metric: rule.metric.clone(),
+                    comparison: rule.comparison.clone(),
+                    threshold: rule.threshold,
+                    consecutive_samples: rule.consecutive_samples,
+                    cooldown_seconds: rule.cooldown_seconds,
+                    enabled: rule.enabled,
+                },
+            )?;
+        }
+        for tunnel in &backup.tunnels {
+            database::insert_tunnel(&tx, tunnel)?;
+        }
+        for policy in &backup.tunnel_policies {
+            // Restores are intentionally inert: users explicitly re-enable autostart.
+            operator_data::save_tunnel_policy(
+                &tx,
+                &TunnelPolicyInput {
+                    tunnel_id: policy.tunnel_id.clone(),
+                    autostart: false,
+                    auto_reconnect: policy.auto_reconnect,
+                    health_interval_secs: policy.health_interval_secs,
+                },
+            )?;
+        }
+        Ok(())
+    })();
+
+    if let Err(error) = restore_result {
+        drop(tx);
+        // jump_host::save updates the runtime route cache. Rollback the DB and
+        // then re-hydrate so failed imports cannot leave ghost runtime routes.
+        let _ = jump_host::hydrate(conn);
+        return Err(error);
+    }
+    tx.commit()?;
+    jump_host::hydrate(conn)?;
+
+    // A restored server ID may already have a credential in this machine's
+    // keyring. Clear every restored ID so backup restore can never resurrect a
+    // secret that was not present in the backup payload.
+    let mut cleanup_failures = Vec::new();
+    for server_id in &restored_server_ids {
+        if let Err(error) = vault::delete_secret(&vault::secret_ref(server_id)) {
+            cleanup_failures.push(format!("{server_id}: {error}"));
+        }
+    }
+    if !cleanup_failures.is_empty() {
+        return Err(anyhow!(
+            "workspace data was restored, but stale credential cleanup failed for: {}",
+            cleanup_failures.join(", ")
+        ));
+    }
+
+    Ok(BackupRestoreReport {
+        servers: backup.servers.len(),
+        runbooks: backup.runbooks.len(),
+        snippets: backup.snippets.len(),
+        jump_hosts: backup.jump_hosts.len(),
+        alert_rules: backup.alert_rules.len(),
+        tunnels: backup.tunnels.len(),
+        password_reentry_server_ids,
+    })
+}
+'''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s)
+          PY
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          git diff --check
+      - name: Commit hardening and remove helper
+        run: |
+          git rm .github/workflows/phase2-restore-hardening.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src-tauri/src/lib.rs src-tauri/src/operator_commands.rs src-tauri/src/workspace_backup.rs
+          git commit -m 'fix: make workspace restore credential-safe and atomic'
+          git push origin HEAD:agent/operator-data-plane
