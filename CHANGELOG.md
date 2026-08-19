@@ -21,6 +21,7 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 - Tunnel policies add desired-state autostart/auto-reconnect reconciliation.
 - Versioned encrypted workspace backup/restore uses OpenSSL AES-256-CBC with PBKDF2, excludes keyring secrets, clears stale local credentials for restored server IDs, and restores transactionally with tunnel autostart disabled.
 - Operator Center provides one place to manage persistent alerts, transfers, multi-host operations, tunnel policies, and backup/restore.
+- Packaged desktop CI now launches the feature-gated Tauri binary under WebDriver and smoke-tests the Operations Dashboard, universal palette, backend Runbook dry-run, and settings persistence through real Tauri IPC/SQLite.
 
 ### Security
 - SSH first contact now uses an app-managed `known_hosts` store with SHA-256 fingerprint preview and explicit Trust / Replace / Remove actions; terminal, one-shot exec, SCP, and tunnels all require strict host-key verification.
@@ -32,6 +33,7 @@ The project follows Semantic Versioning. Pre-release progression for a release l
 - Known keyring secrets are registered in a central redaction layer and masked from buffered SSH output, IPC errors, every textual runbook result field, backend diagnostics, and exported text; profile metadata, user runbooks, snippets, and persisted tunnel endpoint text reject known stored credentials before SQLite persistence.
 - Existing saved credentials are preloaded from keyring references during startup on a best-effort basis, so redaction and persistence guards are active before the first connection attempt; historical user-controlled SQLite text is also scrubbed from logical database values when it contains a known secret.
 - Workspace restore never revives an unrelated stale keyring credential sharing a restored server ID; all restored IDs have local credentials explicitly cleared after the database transaction commits.
+- Packaged E2E keeps the embedded WebDriver dependency optional and immediately feature-gated; the production config keeps `withGlobalTauri=false` and does not enable the WDIO execute/mock IPC bridge.
 - CI and tagged-release preflight contain source-level regression gates that reject weakened SSH/RDP trust and password-in-argv patterns.
 
 ### Reliability
