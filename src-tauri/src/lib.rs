@@ -782,9 +782,13 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+    #[cfg(feature = "e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+
+    builder
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("no app data dir");
             host_identity::init(data_dir.join("known_hosts"))
