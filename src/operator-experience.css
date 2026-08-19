@@ -1,0 +1,230 @@
+/* Operator-experience surfaces layered after the shared application tokens. */
+
+.operations-dashboard {
+  overflow: auto;
+  padding: 18px;
+  align-content: start;
+}
+
+.operations-hero {
+  min-height: 190px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.insight-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+.insight-value {
+  font: 650 28px/1 var(--sans);
+  color: var(--text-0);
+}
+
+.insight-label {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.insight-card small {
+  color: var(--text-2);
+}
+
+.insight-card.metric-ok .insight-value {
+  color: var(--ok);
+}
+
+.insight-card.metric-critical .insight-value {
+  color: var(--crit);
+}
+
+.operations-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(250px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.operations-server-list,
+.dashboard-run-list,
+.studio-step-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.operations-server-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.operations-server-row.status-critical {
+  border-color: color-mix(in srgb, var(--crit) 42%, var(--border));
+}
+
+.operations-server-row.status-warning {
+  border-color: color-mix(in srgb, var(--warn) 42%, var(--border));
+}
+
+.mini-server,
+.dashboard-event {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.mini-server {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.mini-server small,
+.dashboard-event small {
+  color: var(--text-2);
+}
+
+.operations-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.dashboard-event {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-event:not(.static):hover {
+  color: var(--accent);
+}
+
+.runbook-studio {
+  width: min(1180px, calc(100vw - 40px));
+}
+
+.runbook-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.runbook-studio textarea {
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.studio-variables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.studio-step {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.studio-step code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-1);
+}
+
+.palette-results {
+  max-height: min(62vh, 560px);
+  overflow: auto;
+}
+
+.palette-row {
+  grid-template-columns: 78px minmax(150px, 0.75fr) minmax(0, 1.25fr);
+}
+
+.palette-group {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+.palette-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-subtitle {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .operations-columns {
+    grid-template-columns: 1fr;
+  }
+  .runbook-studio-grid {
+    grid-template-columns: 1fr;
+  }
+  .runbook-studio textarea {
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .operations-server-row {
+    grid-template-columns: 1fr;
+  }
+  .studio-variables {
+    grid-template-columns: 1fr;
+  }
+  .palette-row {
+    grid-template-columns: 62px minmax(0, 1fr);
+  }
+  .palette-subtitle {
+    grid-column: 2;
+  }
+}

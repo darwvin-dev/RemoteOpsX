@@ -53,6 +53,8 @@ export const tunnelsReconcile = () => invoke<TunnelReconcileReport>("tunnels_rec
 
 export const multiHostRun = (request: MultiHostRequest) =>
   invoke<MultiHostRun>("multi_host_run", { request });
+export const multiHostCancel = (runId: string) =>
+  invoke<void>("multi_host_cancel", { runId });
 export const multiHostRunsList = (limit = 50) =>
   invoke<MultiHostRun[]>("multi_host_runs_list", { limit });
 

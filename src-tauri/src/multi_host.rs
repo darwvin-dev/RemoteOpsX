@@ -1,9 +1,14 @@
-//! Guarded broadcast execution with bounded concurrency and per-host results.
+//! Guarded broadcast execution with bounded concurrency, cancellation, and
+//! per-host audit results.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::models::{CommandOutput, Server};
@@ -14,8 +19,13 @@ const MAX_TARGETS: usize = 50;
 const MAX_CONCURRENCY: usize = 8;
 const MAX_COMMAND_BYTES: usize = 16 * 1024;
 
+static CANCELLATIONS: Lazy<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiHostRequest {
+    #[serde(default)]
+    pub run_id: Option<String>,
     pub server_ids: Vec<String>,
     pub command: String,
     pub concurrency: usize,
@@ -37,15 +47,27 @@ pub fn looks_destructive(command: &str) -> bool {
         "systemctl restart",
         "docker system prune",
         "kubectl delete",
-        "DROP DATABASE",
+        "drop database",
     ]
     .iter()
-    .any(|needle| normalized.contains(&needle.to_ascii_lowercase()))
+    .any(|needle| normalized.contains(needle))
 }
 
 pub fn validate(request: &MultiHostRequest, servers: &[Server]) -> Result<()> {
     if request.server_ids.is_empty() || servers.is_empty() {
         return Err(anyhow!("select at least one server"));
+    }
+    if let Some(run_id) = request.run_id.as_deref() {
+        let valid = !run_id.is_empty()
+            && run_id.len() <= 64
+            && run_id
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '-');
+        if !valid {
+            return Err(anyhow!(
+                "run_id must be a UUID-like identifier up to 64 characters"
+            ));
+        }
     }
     if request.server_ids.len() > MAX_TARGETS || servers.len() > MAX_TARGETS {
         return Err(anyhow!(
@@ -79,6 +101,18 @@ pub fn validate(request: &MultiHostRequest, servers: &[Server]) -> Result<()> {
     Ok(())
 }
 
+pub fn request_cancel(run_id: &str) -> bool {
+    CANCELLATIONS
+        .lock()
+        .ok()
+        .and_then(|registry| registry.get(run_id).cloned())
+        .map(|flag| {
+            flag.store(true, Ordering::SeqCst);
+            true
+        })
+        .unwrap_or(false)
+}
+
 fn failed_output(message: impl ToString) -> CommandOutput {
     CommandOutput {
         stdout: String::new(),
@@ -90,10 +124,25 @@ fn failed_output(message: impl ToString) -> CommandOutput {
 
 pub fn execute(request: &MultiHostRequest, servers: Vec<Server>) -> Result<MultiHostRun> {
     validate(request, &servers)?;
+    let run_id = request
+        .run_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let cancellation = Arc::new(AtomicBool::new(false));
+    CANCELLATIONS
+        .lock()
+        .map_err(|_| anyhow!("multi-host cancellation registry lock poisoned"))?
+        .insert(run_id.clone(), cancellation.clone());
+
     let started_at = Utc::now().to_rfc3339();
     let mut results = Vec::with_capacity(servers.len());
 
     for batch in servers.chunks(request.concurrency) {
+        // Cooperative cancellation intentionally stops only future batches.
+        // Commands already in flight finish and remain in the audit record.
+        if cancellation.load(Ordering::SeqCst) {
+            break;
+        }
         let command = request.command.as_str();
         let batch_results = thread::scope(|scope| {
             let handles = batch
@@ -124,11 +173,17 @@ pub fn execute(request: &MultiHostRequest, servers: Vec<Server>) -> Result<Multi
         results.extend(batch_results);
     }
 
+    let cancelled = cancellation.load(Ordering::SeqCst);
+    if let Ok(mut registry) = CANCELLATIONS.lock() {
+        registry.remove(&run_id);
+    }
     let successes = results
         .iter()
         .filter(|result| result.output.success)
         .count();
-    let status = if successes == results.len() {
+    let status = if cancelled {
+        "cancelled"
+    } else if successes == results.len() {
         "success"
     } else if successes == 0 {
         "failed"
@@ -136,7 +191,7 @@ pub fn execute(request: &MultiHostRequest, servers: Vec<Server>) -> Result<Multi
         "partial"
     };
     Ok(MultiHostRun {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: run_id,
         command: request.command.clone(),
         status: status.into(),
         started_at,
@@ -175,6 +230,7 @@ mod tests {
     fn requires_separate_production_and_destructive_confirmations() {
         let production = server("production");
         let mut request = MultiHostRequest {
+            run_id: None,
             server_ids: vec![production.id.clone()],
             command: "sudo systemctl restart nginx".into(),
             concurrency: 2,
@@ -194,5 +250,21 @@ mod tests {
         assert!(looks_destructive("sudo reboot"));
         assert!(looks_destructive("kubectl delete pod api"));
         assert!(!looks_destructive("systemctl status nginx"));
+    }
+
+    #[test]
+    fn validates_optional_run_id_shape() {
+        let dev = server("dev");
+        let mut request = MultiHostRequest {
+            run_id: Some("run-1234".into()),
+            server_ids: vec![dev.id.clone()],
+            command: "uptime".into(),
+            concurrency: 1,
+            production_confirmed: false,
+            destructive_confirmed: false,
+        };
+        assert!(validate(&request, std::slice::from_ref(&dev)).is_ok());
+        request.run_id = Some("bad id".into());
+        assert!(validate(&request, &[dev]).is_err());
     }
 }

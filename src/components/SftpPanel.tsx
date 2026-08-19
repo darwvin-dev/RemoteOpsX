@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as api from "../api";
 import * as operatorApi from "../operatorApi";
 import { useStore } from "../store";
@@ -14,6 +15,7 @@ export function SftpPanel({ server, active, protocol = "sftp" }: { server: Serve
   const [files, setFiles] = useState<RemoteFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const label = protocol.toUpperCase();
   const commands = protocol === "ftp"
     ? { list: api.ftpList, upload: api.ftpUpload, download: api.ftpDownload, delete: api.ftpDelete, rename: api.ftpRename }
@@ -36,6 +38,43 @@ export function SftpPanel({ server, active, protocol = "sftp" }: { server: Serve
   useEffect(() => {
     if (active && !loaded) void list(path);
   }, [active, loaded, path]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!active || protocol !== "sftp") return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview().onDragDropEvent((event) => {
+      if (disposed) return;
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        setDragActive(true);
+        return;
+      }
+      if (event.payload.type === "leave") {
+        setDragActive(false);
+        return;
+      }
+      if (event.payload.type === "drop") {
+        setDragActive(false);
+        const droppedPaths = event.payload.paths;
+        void Promise.all(droppedPaths.map((source) => operatorApi.transferStart({
+          server_id: server.id,
+          direction: "upload",
+          source,
+          destination: path,
+          recursive: true,
+        }))).then((jobs) => {
+          pushAlert("info", `${jobs.length} dropped item${jobs.length === 1 ? "" : "s"} queued for SFTP upload.`);
+        }).catch((error) => pushAlert("error", `SFTP drag/drop: ${error}`));
+      }
+    }).then((cleanup) => {
+      if (disposed) cleanup(); else unlisten = cleanup;
+    }).catch((error) => pushAlert("error", `SFTP drag/drop listener: ${error}`));
+    return () => {
+      disposed = true;
+      setDragActive(false);
+      unlisten?.();
+    };
+  }, [active, path, protocol, pushAlert, server.id]);
 
   function join(dir: string, name: string) {
     if (name === "..") {
@@ -140,11 +179,12 @@ export function SftpPanel({ server, active, protocol = "sftp" }: { server: Serve
   }
 
   return (
-    <div className="sftp">
+    <div className={`sftp${dragActive ? " drag-active" : ""}`}>
       <div className="sftp-bar">
         <span className={`pill ${protocol}`}>{label}</span>
         {protocol === "ftp" && <span className="status-badge status-warn" title="FTP traffic is not encrypted">plaintext</span>}
         {protocol === "sftp" && <span className="status-badge status-ok" title="Transfers reuse a persistent SSH ControlMaster">persistent</span>}
+        {protocol === "sftp" && dragActive && <span className="status-badge status-ok">drop to upload</span>}
         <button className="tiny" onClick={() => void list(join(path, ".."))}>↑ Up</button>
         <input className="sftp-path" value={path} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void list(path)} />
         <button className="tiny" disabled={busy} onClick={() => void list(path)}>Go</button>

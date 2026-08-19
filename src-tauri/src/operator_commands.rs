@@ -165,8 +165,8 @@ pub fn tunnels_reconcile(
 }
 
 #[tauri::command]
-pub fn multi_host_run(
-    state: State<AppState>,
+pub async fn multi_host_run(
+    state: State<'_, AppState>,
     request: MultiHostRequest,
 ) -> CommandResult<MultiHostRun> {
     if redaction::contains_known_secret(&request.command) {
@@ -190,12 +190,27 @@ pub fn multi_host_run(
         }
         servers
     };
-    let run = remote(multi_host::execute(&request, servers))?;
+    let run = tauri::async_runtime::spawn_blocking(move || multi_host::execute(&request, servers))
+        .await
+        .map_err(|error| DomainError::internal(format!("multi-host worker failed: {error}")))?
+        .map_err(|error| DomainError::remote(error.to_string()))?;
     {
         let conn = state.db.lock().unwrap();
         internal(operator_data::save_multi_host_run(&conn, &run))?;
     }
     Ok(run)
+}
+
+#[tauri::command]
+pub fn multi_host_cancel(run_id: String) -> CommandResult<()> {
+    if multi_host::request_cancel(&run_id) {
+        Ok(())
+    } else {
+        Err(DomainError::validation(
+            "run_id",
+            "multi-host run is not active or already completed",
+        ))
+    }
 }
 
 #[tauri::command]
