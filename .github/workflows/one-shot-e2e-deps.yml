@@ -1,0 +1,82 @@
+name: One-shot Packaged E2E Wiring
+
+on:
+  push:
+    branches: [agent/packaged-desktop-e2e]
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/packaged-desktop-e2e
+          fetch-depth: 0
+
+      - name: Install Tauri build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+
+      - name: Install WebdriverIO runner dependencies
+        run: |
+          npm install --save-dev \
+            @wdio/cli \
+            @wdio/local-runner \
+            @wdio/mocha-framework \
+            @wdio/spec-reporter \
+            @wdio/tauri-service
+
+      - name: Register the embedded driver only behind the e2e feature
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src-tauri/src/lib.rs')
+          text = path.read_text()
+          old = '''pub fn run() {\n    tauri::Builder::default()\n        .plugin(tauri_plugin_shell::init())\n        .plugin(tauri_plugin_dialog::init())\n        .setup(|app| {'''
+          new = '''pub fn run() {\n    let builder = tauri::Builder::default()\n        .plugin(tauri_plugin_shell::init())\n        .plugin(tauri_plugin_dialog::init());\n    #[cfg(feature = "e2e")]\n    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());\n\n    builder\n        .setup(|app| {'''
+          if old not in text:
+              raise SystemExit('Tauri builder marker not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+
+      - name: Resolve Rust lock and compile the E2E feature
+        run: cargo check --manifest-path src-tauri/Cargo.toml --features e2e
+
+      - name: Verify frontend and lockfiles
+        run: |
+          npm run build
+          git diff --check
+          grep -q 'tauri-plugin-wdio-webdriver' src-tauri/Cargo.lock
+          grep -q '"@wdio/tauri-service"' package-lock.json
+
+      - name: Commit generated dependency state and remove helper
+        run: |
+          git rm .github/workflows/one-shot-e2e-deps.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/lib.rs
+          git commit -m 'test: wire feature-gated packaged desktop webdriver'
+          git push origin HEAD:agent/packaged-desktop-e2e
