@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Tauri system dependencies
+      - name: Install Tauri and SSH fixture dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -32,7 +32,9 @@ jobs:
             librsvg2-dev \
             patchelf \
             libssl-dev \
-            build-essential
+            build-essential \
+            openssh-server \
+            sshpass
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -78,6 +80,9 @@ jobs:
 
       - name: Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Live SSH integration fixture
+        run: bash scripts/ci-live-ssh.sh
 
       - name: Rust build
         run: cargo build --locked --manifest-path src-tauri/Cargo.toml

@@ -15,6 +15,8 @@ use anyhow::{anyhow, Context, Result};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
 
+use crate::jump_host::{self, JumpHostConfig};
+
 static KNOWN_HOSTS_PATH: OnceCell<PathBuf> = OnceCell::new();
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -66,19 +68,16 @@ pub fn known_hosts_path() -> Result<PathBuf> {
 
 fn strict_options_for_path(path: &Path) -> Vec<String> {
     vec![
+        "-F".into(),
+        "/dev/null".into(),
         "-o".into(),
         format!("UserKnownHostsFile={}", path.to_string_lossy()),
-        // Do not let system-wide known_hosts or a configured helper silently
-        // establish trust outside RemoteOpsX's explicit fingerprint workflow.
         "-o".into(),
         "GlobalKnownHostsFile=/dev/null".into(),
         "-o".into(),
         "KnownHostsCommand=none".into(),
         "-o".into(),
         "StrictHostKeyChecking=yes".into(),
-        // Secure SSHFP records and OpenSSH's host-key update extension are
-        // useful in other contexts, but both would create trust outside the
-        // app-managed known_hosts review boundary.
         "-o".into(),
         "VerifyHostKeyDNS=no".into(),
         "-o".into(),
@@ -92,9 +91,7 @@ pub fn strict_ssh_options() -> Result<Vec<String>> {
     Ok(strict_options_for_path(&known_hosts_path()?))
 }
 
-pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
-    validate_target(host, port)?;
-    let scanned = scan_lines(host, port)?;
+fn report_from_scanned(host: &str, port: u16, scanned: Vec<String>) -> Result<HostIdentityReport> {
     if scanned.is_empty() {
         return Err(anyhow!(
             "No SSH host key was returned by {}:{}. Check DNS/network/port before trusting.",
@@ -102,10 +99,8 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
             port
         ));
     }
-
     let candidates = fingerprints(&scanned)?;
-    let trusted_lines = trusted_lines(host, port)?;
-    let trusted = fingerprints(&trusted_lines)?;
+    let trusted = fingerprints(&trusted_lines(host, port)?)?;
     let candidate_fingerprints: Vec<&str> = candidates
         .iter()
         .map(|value| value.fingerprint.as_str())
@@ -120,7 +115,6 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
     } else {
         "changed"
     };
-
     Ok(HostIdentityReport {
         host: host.to_string(),
         port,
@@ -130,15 +124,33 @@ pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
     })
 }
 
-pub fn trust(
+pub fn inspect(host: &str, port: u16) -> Result<HostIdentityReport> {
+    validate_target(host, port)?;
+    report_from_scanned(host, port, scan_lines(host, port)?)
+}
+
+pub fn inspect_via_jump(
+    host: &str,
+    port: u16,
+    jump: &JumpHostConfig,
+) -> Result<HostIdentityReport> {
+    validate_target(host, port)?;
+    jump_host::validate(jump)?;
+    report_from_scanned(host, port, scan_lines_via_jump(host, port, jump)?)
+}
+
+fn trust_from_scan<F>(
     host: &str,
     port: u16,
     expected_fingerprint: &str,
     replace: bool,
-) -> Result<HostIdentityReport> {
+    scan: F,
+) -> Result<HostIdentityReport>
+where
+    F: Fn() -> Result<Vec<String>>,
+{
     validate_target(host, port)?;
-    let before = inspect(host, port)?;
-
+    let before = report_from_scanned(host, port, scan()?)?;
     match before.status.as_str() {
         "trusted" if !replace => return Ok(before),
         "changed" if !replace => {
@@ -149,9 +161,7 @@ pub fn trust(
         _ => {}
     }
 
-    // Re-scan immediately before persistence so a fingerprint that disappeared
-    // between preview and Trust/Replace cannot be written accidentally.
-    let scanned = scan_lines(host, port)?;
+    let scanned = scan()?;
     let scanned_with_fingerprints = scanned
         .iter()
         .map(|line| Ok((line.clone(), fingerprint(line)?)))
@@ -168,13 +178,35 @@ pub fn trust(
     if replace || before.status == "unseen" {
         remove(host, port)?;
     }
-
     let path = known_hosts_path()?;
     let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
     writeln!(file, "{}", selected.0)?;
     file.sync_all()?;
+    report_from_scanned(host, port, scan()?)
+}
 
-    inspect(host, port)
+pub fn trust(
+    host: &str,
+    port: u16,
+    expected_fingerprint: &str,
+    replace: bool,
+) -> Result<HostIdentityReport> {
+    trust_from_scan(host, port, expected_fingerprint, replace, || {
+        scan_lines(host, port)
+    })
+}
+
+pub fn trust_via_jump(
+    host: &str,
+    port: u16,
+    jump: &JumpHostConfig,
+    expected_fingerprint: &str,
+    replace: bool,
+) -> Result<HostIdentityReport> {
+    jump_host::validate(jump)?;
+    trust_from_scan(host, port, expected_fingerprint, replace, || {
+        scan_lines_via_jump(host, port, jump)
+    })
 }
 
 pub fn remove(host: &str, port: u16) -> Result<()> {
@@ -210,10 +242,6 @@ pub fn remove(host: &str, port: u16) -> Result<()> {
 }
 
 pub fn validate_target(host: &str, port: u16) -> Result<()> {
-    // The first known_hosts field has wildcard/list/marker syntax. Accept only
-    // the DNS/IP characters RemoteOpsX needs so a profile value cannot create
-    // trust for additional hosts (for example via commas or '*'). Raw IPv6
-    // addresses and zone identifiers such as fe80::1%eth0 remain supported.
     let valid_host = !host.is_empty()
         && host == host.trim()
         && host.chars().all(|character| {
@@ -257,6 +285,14 @@ fn normalize_scanned_line(line: &str, host: &str, port: u16) -> Option<String> {
     ))
 }
 
+fn parse_scan_output(bytes: &[u8], host: &str, port: u16) -> Vec<String> {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+        .filter_map(|line| normalize_scanned_line(line, host, port))
+        .collect()
+}
+
 fn scan_lines(host: &str, port: u16) -> Result<Vec<String>> {
     let port_string = port.to_string();
     let output = Command::new("ssh-keyscan")
@@ -271,11 +307,47 @@ fn scan_lines(host: &str, port: u16) -> Result<Vec<String>> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
-        .filter_map(|line| normalize_scanned_line(line, host, port))
-        .collect())
+    Ok(parse_scan_output(&output.stdout, host, port))
+}
+
+fn scan_lines_via_jump(host: &str, port: u16, jump: &JumpHostConfig) -> Result<Vec<String>> {
+    let mut args = strict_ssh_options()?;
+    args.extend([
+        "-T".into(),
+        "-o".into(),
+        "BatchMode=yes".into(),
+        "-o".into(),
+        "IdentitiesOnly=yes".into(),
+        "-i".into(),
+        jump.private_key_path.clone(),
+        "-p".into(),
+        jump.port.to_string(),
+        format!("{}@{}", jump.username, jump.host),
+    ]);
+    let mut child = Command::new("ssh")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| anyhow!("failed to start SSH bastion scan: {error}"))?;
+    let command = format!("ssh-keyscan -T 5 -p {port} -- {host}\n");
+    child
+        .stdin
+        .as_mut()
+        .context("failed to open bastion scan stdin")?
+        .write_all(command.as_bytes())?;
+    drop(child.stdin.take());
+    let output = child.wait_with_output()?;
+    if !output.status.success() && output.stdout.is_empty() {
+        return Err(anyhow!(
+            "Could not scan {host}:{port} through trusted bastion {}:{}: {}",
+            jump.host,
+            jump.port,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(parse_scan_output(&output.stdout, host, port))
 }
 
 fn trusted_lines(host: &str, port: u16) -> Result<Vec<String>> {
@@ -347,6 +419,7 @@ mod tests {
         ] {
             assert!(args.iter().any(|arg| arg == required), "missing {required}");
         }
+        assert!(args.windows(2).any(|pair| pair == ["-F", "/dev/null"]));
         assert!(args
             .iter()
             .any(|arg| arg == "UserKnownHostsFile=/tmp/remoteopsx-known-hosts"));

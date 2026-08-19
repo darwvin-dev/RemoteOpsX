@@ -11,6 +11,13 @@ rust-version = "1.77"
 name = "remoteopsx_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# CI-only hooks for the ephemeral SSH transport fixture. Production builds do
+# not enable this feature, so fixture credentials can never replace keyring
+# lookups in release binaries.
+integration-fixture = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
 
+use crate::jump_host::{self, JumpHostConfig};
 use crate::models::{Server, Tunnel};
 use crate::ssh_manager;
 
@@ -99,17 +100,22 @@ impl TunnelManager {
         Self::default()
     }
 
-    pub fn start(&self, server: &Server, tunnel: &Tunnel) -> Result<()> {
+    pub fn start_via(
+        &self,
+        server: &Server,
+        jump: Option<&JumpHostConfig>,
+        tunnel: &Tunnel,
+    ) -> Result<()> {
         validate_tunnel(tunnel)?;
         let mut args: Vec<String> = vec!["-N".into()];
         args.extend(ssh_manager::strict_host_key_args()?);
+        args.extend(ssh_manager::jump_host_args_via(jump)?);
         args.extend([
             "-o".into(),
             "ExitOnForwardFailure=yes".into(),
             "-p".into(),
             server.port.to_string(),
         ]);
-
         push_auth_args(server, &mut args);
 
         let local_host = tunnel
@@ -151,7 +157,6 @@ impl TunnelManager {
             }
             other => return Err(anyhow!("unknown tunnel type: {other}")),
         }
-
         args.push(format!("{}@{}", server.username, server.host));
 
         let (program, full_args) = if server.auth_type == "password" {
@@ -161,11 +166,9 @@ impl TunnelManager {
         } else {
             ("ssh".to_string(), args)
         };
-
         let mut cmd = Command::new(&program);
         cmd.args(&full_args);
         ssh_manager::apply_password_env(&mut cmd, server);
-
         let mut child = cmd
             .spawn()
             .map_err(|error| anyhow!("failed to start tunnel: {error}"))?;
@@ -177,6 +180,11 @@ impl TunnelManager {
         }
         self.procs.lock().unwrap().insert(tunnel.id.clone(), child);
         Ok(())
+    }
+
+    pub fn start(&self, server: &Server, tunnel: &Tunnel) -> Result<()> {
+        let jump = jump_host::get_cached(&server.id);
+        self.start_via(server, jump.as_ref(), tunnel)
     }
 
     pub fn stop(&self, id: &str) -> Result<()> {

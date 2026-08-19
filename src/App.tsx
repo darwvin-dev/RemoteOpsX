@@ -9,6 +9,7 @@ import { RightPanel } from "./components/RightPanel";
 import { BottomPanel } from "./components/BottomPanel";
 import { RunbookLauncher } from "./components/RunbookLauncher";
 import { TunnelManager } from "./components/TunnelManager";
+import { JumpHostManager } from "./components/JumpHostManager";
 import { CommandPalette } from "./components/CommandPalette";
 import { ToastStack } from "./components/ToastStack";
 import { SettingsModal } from "./components/SettingsModal";
@@ -26,6 +27,7 @@ export default function App() {
   const [initialFolder, setInitialFolder] = useState<string | undefined>(undefined);
   const [showRunbooks, setShowRunbooks] = useState(false);
   const [showTunnels, setShowTunnels] = useState(false);
+  const [showJumpHosts, setShowJumpHosts] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -86,13 +88,9 @@ export default function App() {
   return (
     <div className={`app${rightCollapsed ? " right-collapsed" : ""}`}>
       <header className="topbar">
-        <div className="brand">
-          <span className="logo" />
-          <span>RemoteOpsX</span>
-        </div>
+        <div className="brand"><span className="logo" /><span>RemoteOpsX</span></div>
         <button ref={commandTriggerRef} className="command-trigger" onClick={() => setPaletteOpen(true)}>
-          <span>Search servers, actions, runbooks…</span>
-          <kbd>Ctrl K</kbd>
+          <span>Search servers, actions, runbooks…</span><kbd>Ctrl K</kbd>
         </button>
         <div className="spacer" />
         {!settingsInitialized ? <span className="status-chip" role="status">Loading settings…</span> : null}
@@ -100,28 +98,20 @@ export default function App() {
         <div className="top-stats" aria-label="Workspace status">
           <button className="status-chip" onClick={() => setPaletteOpen(true)}>{servers.length} servers</button>
           <span className="status-chip">{tabs.length} tabs</span>
-          <button className="status-chip alert-chip" onClick={() => setBottomPanel("alerts")}>
-            {alerts.length} alerts
-          </button>
+          <button className="status-chip alert-chip" onClick={() => setBottomPanel("alerts")}>{alerts.length} alerts</button>
         </div>
         <button className="tiny" onClick={() => setShowRunbooks(true)}>Runbooks</button>
         <button className="tiny" onClick={() => setShowTunnels(true)}>Tunnels</button>
+        <button className="tiny" onClick={() => setShowJumpHosts(true)}>Bastions</button>
         <button ref={settingsTriggerRef} className="tiny" onClick={() => openSettings(settingsTriggerRef.current)}>Settings</button>
       </header>
 
       <ServerSidebar onNew={openNewServer} onEdit={openEditServer} />
-
       <main className="main">
         <TabBar />
-        <TabContent
-          onNewServer={openNewServer}
-          onOpenRunbooks={() => setShowRunbooks(true)}
-          onOpenTunnels={() => setShowTunnels(true)}
-        />
+        <TabContent onNewServer={openNewServer} onOpenRunbooks={() => setShowRunbooks(true)} onOpenTunnels={() => setShowTunnels(true)} />
       </main>
-
       {!rightCollapsed && <RightPanel />}
-
       <BottomPanel />
       <ToastStack />
 
@@ -135,17 +125,11 @@ export default function App() {
       />
 
       {editing !== undefined && (
-        <ServerForm
-          server={editing}
-          initialFolder={initialFolder}
-          onClose={() => {
-            setEditing(undefined);
-            setInitialFolder(undefined);
-          }}
-        />
+        <ServerForm server={editing} initialFolder={initialFolder} onClose={() => { setEditing(undefined); setInitialFolder(undefined); }} />
       )}
       {showRunbooks && <RunbookLauncher onClose={() => setShowRunbooks(false)} />}
       {showTunnels && <TunnelManager onClose={() => setShowTunnels(false)} />}
+      {showJumpHosts && <JumpHostManager onClose={() => setShowJumpHosts(false)} />}
       {settingsOpen && <SettingsModal returnFocus={settingsReturnFocusRef.current} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
